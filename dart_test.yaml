@@ -1,0 +1,9 @@
+# `live` tests talk to a running backend (`npm run dev` in kong/). They are
+# excluded from the default run so `flutter test` stays hermetic and fast, and
+# does not fail on a machine with no API.
+#
+#   flutter test               # the 31 offline tests
+#   flutter test --tags live   # the 9 end-to-end checks against the real API
+tags:
+  live:
+    skip: "needs a running backend — run with `flutter test --tags live`"
