@@ -16,20 +16,18 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _form = GlobalKey<FormState>();
-  final _ownerName = TextEditingController();
+  final _businessName = TextEditingController();
   final _phone = TextEditingController();
-  final _bankName = TextEditingController();
-  final _bankAccount = TextEditingController();
+  final _taxId = TextEditingController();
 
   bool _busy = false;
   String? _loadedFor;
 
   @override
   void dispose() {
-    _ownerName.dispose();
+    _businessName.dispose();
     _phone.dispose();
-    _bankName.dispose();
-    _bankAccount.dispose();
+    _taxId.dispose();
     super.dispose();
   }
 
@@ -38,9 +36,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _seed(Partner p) {
     if (_loadedFor == p.id) return;
     _loadedFor = p.id;
-    _ownerName.text = p.ownerName;
+    _businessName.text = p.businessName;
     _phone.text = p.phone;
-    _bankName.text = p.bankName ?? '';
+    _taxId.text = p.taxId ?? '';
   }
 
   Future<void> _save() async {
@@ -49,17 +47,82 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     try {
       await ref.read(actionsProvider).updateProfile({
-        'ownerName': _ownerName.text.trim(),
-        'phone': _phone.text.trim(),
-        'bankName': _bankName.text.trim(),
-        // Only sent when actually retyped: the server returns the account
-        // masked (`***1234`), so echoing that back would overwrite the real
-        // number with asterisks.
-        if (_bankAccount.text.trim().isNotEmpty) 'bankAccount': _bankAccount.text.trim(),
+        'businessName': _businessName.text.trim(),
+        'contactPhone': _phone.text.trim(),
+        if (_taxId.text.trim().isNotEmpty) 'taxId': _taxId.text.trim(),
       });
       if (!mounted) return;
-      _bankAccount.clear();
       showMessage(context, 'ບັນທຶກແລ້ວ');
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Adds a payout account.
+  ///
+  /// Its own dialog and its own endpoint, because the number is write-once: the
+  /// server never sends it back unmasked, so it could not be edited in place
+  /// without the form overwriting the real number with asterisks.
+  Future<void> _addBankAccount() async {
+    final bankName = TextEditingController();
+    final accountName = TextEditingController();
+    final accountNumber = TextEditingController();
+    final key = GlobalKey<FormState>();
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ເພີ່ມບັນຊີທະນາຄານ'),
+        content: Form(
+          key: key,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: bankName,
+                decoration: const InputDecoration(labelText: 'ຊື່ທະນາຄານ'),
+                validator: (v) => (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່ທະນາຄານ' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: accountName,
+                decoration: const InputDecoration(labelText: 'ຊື່ບັນຊີ'),
+                validator: (v) => (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່ບັນຊີ' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: accountNumber,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'ເລກບັນຊີ'),
+                validator: (v) => (v == null || v.trim().length < 4) ? 'ໃສ່ເລກບັນຊີ' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ຍົກເລີກ')),
+          FilledButton(
+            onPressed: () {
+              if (key.currentState!.validate()) Navigator.pop(ctx, true);
+            },
+            child: const Text('ເພີ່ມ'),
+          ),
+        ],
+      ),
+    );
+
+    if (submitted != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref.read(actionsProvider).addBankAccount({
+        'bankName': bankName.text.trim(),
+        'accountName': accountName.text.trim(),
+        'accountNumber': accountNumber.text.trim(),
+      });
+      if (mounted) showMessage(context, 'ເພີ່ມບັນຊີແລ້ວ');
     } on ApiException catch (e) {
       if (mounted) showMessage(context, e.message, error: true);
     } finally {
@@ -107,10 +170,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   child: Column(
                     children: [
                       TextFormField(
-                        controller: _ownerName,
-                        decoration: const InputDecoration(labelText: 'ຊື່ເຈົ້າຂອງ'),
+                        controller: _businessName,
+                        decoration: const InputDecoration(labelText: 'ຊື່ທຸລະກິດ'),
                         validator: (v) =>
-                            (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່' : null,
+                            (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່ທຸລະກິດ' : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -120,6 +183,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         validator: (v) =>
                             (v == null || v.trim().length < 6) ? 'ໃສ່ເບີໂທ' : null,
                       ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _taxId,
+                        decoration: const InputDecoration(
+                          labelText: 'ເລກປະຈຳຕົວຜູ້ເສຍພາສີ',
+                          helperText: 'ບໍ່ບັງຄັບ',
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -127,19 +198,71 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 SectionCard(
                   title: 'ບັນຊີຮັບເງິນ',
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: _bankName,
-                        decoration: const InputDecoration(labelText: 'ຊື່ທະນາຄານ'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _bankAccount,
-                        decoration: InputDecoration(
-                          labelText: 'ເລກບັນຊີ',
-                          hintText: p.bankAccount ?? 'ຍັງບໍ່ໄດ້ໃສ່',
-                          helperText: 'ປ່ອຍວ່າງໄວ້ ຖ້າບໍ່ຕ້ອງການປ່ຽນ',
-                        ),
+                      // A partner may hold several accounts and one is the
+                      // default the payouts go to, so this is a list rather
+                      // than a pair of fields.
+                      if (p.bankAccounts.isEmpty)
+                        const Text(
+                          'ຍັງບໍ່ໄດ້ເພີ່ມບັນຊີ — ຕ້ອງມີບັນຊີກ່ອນຈຶ່ງຮັບເງິນໂອນໄດ້',
+                          style: TextStyle(fontSize: 12.5, color: C.muted, height: 1.5),
+                        )
+                      else
+                        for (final b in p.bankAccounts)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.account_balance_outlined,
+                                    size: 18, color: C.soft),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        b.bankName,
+                                        style: const TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: C.text,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${b.accountName} · ${b.account}',
+                                        style: const TextStyle(fontSize: 12, color: C.faint),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (b.isDefault)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: C.accentSoft,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'ຫຼັກ',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: C.accentDark,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _addBankAccount,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('ເພີ່ມບັນຊີທະນາຄານ'),
                       ),
                       const SizedBox(height: 10),
                       const Row(

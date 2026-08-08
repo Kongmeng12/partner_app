@@ -15,10 +15,14 @@ import 'package:partner_app/models/models.dart';
 /// ApiClient and models against `npm run dev`, so a field renamed on the server
 /// shows up here rather than as an empty screen on a partner's phone.
 ///
-/// Skipped automatically when the API is not running, so `flutter test` stays
-/// green on a machine with no backend. To run only these:
+/// Excluded from the default run, so `flutter test` stays hermetic and green on
+/// a machine with no backend. To run them:
 ///
-///   flutter test --tags live
+///   flutter test --tags live --run-skipped
+///
+/// `--run-skipped` is not optional: the `skip` in dart_test.yaml is what keeps
+/// them out of the default run, and selecting the tag does not override it.
+/// They also self-skip if nothing answers on $baseUrl.
 const baseUrl = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'http://localhost:3100/api',
@@ -70,9 +74,17 @@ void main() {
       refresh: res['refreshToken'] as String,
     );
 
-    final partner = Partner.fromJson(Map<String, dynamic>.from(res['partner'] as Map));
+    // One login endpoint serves everyone, so the response carries the account
+    // and its role — the business comes from /partner/me.
+    final user = Map<String, dynamic>.from(res['user'] as Map);
+    expect(user['role'], 'PARTNER');
+    expect(user['email'], partnerEmail);
+
+    final raw = await api.get<dynamic>('/partner/me');
+    final partner = Partner.fromJson(Map<String, dynamic>.from(raw as Map));
     expect(partner.email, partnerEmail);
     expect(partner.isVerified, isTrue);
+    expect(partner.businessName, isNotEmpty);
     // Ids travel as strings; parsing one into an int is the bug this guards.
     expect(int.tryParse(partner.id), isNotNull);
   });
@@ -84,9 +96,11 @@ void main() {
     final d = PartnerDashboard(Map<String, dynamic>.from(raw as Map));
 
     expect(d.occupancyPercent, inInclusiveRange(0, 100));
+    expect(d.soldTonight, lessThanOrEqualTo(d.capacity),
+        reason: 'more rooms sold than exist would be an oversell');
     // The same identity the backend's smoke suite asserts on payouts.
-    expect(d.weekGmv, d.weekCommission + d.weekNet,
-        reason: 'gmv must equal commission + net, exactly');
+    expect(d.weekGross, d.weekCommission + d.weekNet,
+        reason: 'gross must equal commission + net, exactly');
   });
 
   test('bookings parse, and every total balances', () async {
@@ -119,7 +133,7 @@ void main() {
       BookingSummary.fromJson,
     );
     final done = page.items.firstWhere(
-      (b) => b.status == 'done',
+      (b) => b.status == 'completed',
       orElse: () => page.items.first,
     );
 
@@ -127,10 +141,19 @@ void main() {
     final detail = BookingDetail(Map<String, dynamic>.from(raw as Map));
 
     expect(detail.code, done.code);
-    expect(detail.subtotal + detail.fee - detail.discount, detail.total,
-        reason: 'subtotal + fee - discount must equal total');
+    expect(
+      detail.subtotal +
+          detail.serviceFee +
+          detail.tax +
+          detail.cleaningFee -
+          detail.discount,
+      detail.total,
+      reason: 'the booking total must equal the sum of its parts',
+    );
+    expect(detail.total - detail.commission, detail.payout,
+        reason: 'payout must be total minus commission, exactly');
 
-    if (detail.status == 'done' || detail.status == 'cancelled') {
+    if (detail.status == 'completed' || detail.status == 'cancelled') {
       expect(detail.nextStatus, isNull, reason: 'a finished stay has nowhere to go');
       expect(detail.canCancel, isFalse);
     }
@@ -145,9 +168,10 @@ void main() {
     expect(properties, isNotEmpty);
     for (final p in properties) {
       expect(p.name, isNotEmpty);
-      for (final r in p.rooms) {
-        expect(r.basePrice, greaterThan(0));
-        expect(r.qty, greaterThan(0));
+      for (final rt in p.roomTypes) {
+        expect(rt.basePrice, greaterThan(0));
+        expect(rt.totalRooms, greaterThan(0));
+        expect(rt.maxOccupancy, greaterThan(0));
       }
     }
   });
@@ -156,15 +180,15 @@ void main() {
     if (!reachable) return markTestSkipped('backend not running');
 
     final raw = await api.get<dynamic>('/partner/properties');
-    final room = mapListOf(raw)
+    final roomType = mapListOf(raw)
         .map(Property.fromJson)
-        .expand((p) => p.rooms)
-        .firstWhere((r) => r.isActive);
+        .expand((p) => p.roomTypes)
+        .firstWhere((rt) => rt.isActive);
 
     final from = todayUtc();
     final to = addDays(from, 7);
     final calRaw = await api.get<dynamic>(
-      '/partner/rooms/${room.id}/availability',
+      '/partner/room-types/${roomType.id}/calendar',
       query: {'from': apiDay(from), 'to': apiDay(to)},
     );
     final cal = RoomCalendar.fromJson(Map<String, dynamic>.from(calRaw as Map));
@@ -173,6 +197,17 @@ void main() {
     expect(cal.days.first.date, apiDay(from));
     // The last night is the day before `to` — the range is half-open, like a stay.
     expect(cal.days.last.date, apiDay(addDays(to, -1)));
+
+    // The counters the whole booking flow rests on. `available` is a generated
+    // column, so this is really checking that it arrived intact rather than
+    // that the server can subtract.
+    for (final day in cal.days) {
+      expect(day.held + day.booked, lessThanOrEqualTo(day.total),
+          reason: '${day.date} is oversold');
+      expect(day.available, day.total - day.held - day.booked,
+          reason: '${day.date}: available must agree with its parts');
+      expect(day.price, greaterThan(0), reason: '${day.date} has no price');
+    }
   });
 
   test("another partner's booking is not visible", () async {
@@ -202,11 +237,10 @@ void main() {
     );
   });
 
-  test('chat and notifications answer', () async {
+  // Chat is not in the API yet, so there is nothing here to check — the app's
+  // chat tab says as much rather than polling an endpoint that does not exist.
+  test('notifications answer', () async {
     if (!reachable) return markTestSkipped('backend not running');
-
-    final unread = await api.get<dynamic>('/partner/chat/unread');
-    expect(intOf(Map<String, dynamic>.from(unread as Map)['total']), greaterThanOrEqualTo(0));
 
     final feed = await api.get<dynamic>('/partner/notifications');
     final items = mapListOf(Map<String, dynamic>.from(feed as Map)['items'])
@@ -214,6 +248,105 @@ void main() {
         .toList();
     for (final n in items) {
       expect(n.title, isNotEmpty);
+      expect(n.body, isNotEmpty, reason: 'the message field is `message`, not `body`');
+    }
+  });
+
+  test('chat threads, messages and the unread cursor', () async {
+    if (!reachable) return markTestSkipped('backend not running');
+
+    final raw = await api.get<dynamic>('/partner/conversations');
+    final j = Map<String, dynamic>.from(raw as Map);
+    final threads = mapListOf(j['items']).map(Conversation.fromJson).toList();
+
+    expect(threads, isNotEmpty, reason: 'the seed opens conversations for this partner');
+
+    for (final t in threads) {
+      expect(int.tryParse(t.id), isNotNull, reason: 'ids travel as strings');
+      expect(t.counterpartName, isNotEmpty);
+      expect(t.unread, greaterThanOrEqualTo(0));
+    }
+
+    // The badge must be the same number the list adds up to, not a second
+    // count computed a different way.
+    final badge = await api.get<dynamic>('/partner/conversations/unread');
+    final total = intOf(Map<String, dynamic>.from(badge as Map)['total']);
+    expect(total, threads.fold<int>(0, (sum, t) => sum + t.unread),
+        reason: 'the badge must equal the sum of the per-thread counts');
+
+    final thread = threads.first;
+    final msgRaw = await api.get<dynamic>('/partner/conversations/${thread.id}/messages');
+    final messages = mapListOf(Map<String, dynamic>.from(msgRaw as Map)['items'])
+        .map(ChatMessage.fromJson)
+        .toList();
+
+    expect(messages, isNotEmpty);
+    // Reading order, oldest first — the bubbles are rendered in list order.
+    for (var i = 1; i < messages.length; i++) {
+      expect(messages[i].seq, greaterThan(messages[i - 1].seq),
+          reason: 'messages must arrive in id order');
+    }
+
+    // `since` is an id cursor: asking past the newest returns nothing.
+    final newest = messages.last.seq;
+    final none = await api.get<dynamic>(
+      '/partner/conversations/${thread.id}/messages',
+      query: {'since': newest},
+    );
+    expect(mapListOf(Map<String, dynamic>.from(none as Map)['items']), isEmpty,
+        reason: 'polling past the newest message must return nothing');
+  });
+
+  test("another partner's conversation is not visible", () async {
+    if (!reachable) return markTestSkipped('backend not running');
+
+    final raw = await api.get<dynamic>('/partner/conversations');
+    final threads =
+        mapListOf(Map<String, dynamic>.from(raw as Map)['items']).map(Conversation.fromJson);
+    if (threads.isEmpty) return markTestSkipped('no conversations to check against');
+
+    final other = ApiClient(
+      tokens: TokenStore(storage: InMemoryKeyValueStore()),
+      baseUrl: baseUrl,
+    );
+    await other.tokens.load();
+    final res = await other.partnerLogin('homsabay@laostay.la', partnerPassword);
+    await other.tokens.save(
+      access: res['accessToken'] as String,
+      refresh: res['refreshToken'] as String,
+    );
+
+    // 404 rather than 403 — a 403 would confirm the id exists, which is enough
+    // to enumerate other partners' threads.
+    try {
+      await other.get<dynamic>('/partner/conversations/${threads.first.id}/messages');
+      fail("partner B read partner A's conversation");
+    } on ApiException catch (e) {
+      expect(e.statusCode, 404, reason: 'must be 404, not 403');
+    }
+  });
+
+  test('payouts reconcile against their items', () async {
+    if (!reachable) return markTestSkipped('backend not running');
+
+    final raw = await api.get<dynamic>('/partner/payouts');
+    final j = Map<String, dynamic>.from(raw as Map);
+    final payouts = mapListOf(j['items']).map(Payout.fromJson).toList();
+
+    for (final p in payouts) {
+      expect(p.gross, p.commission + p.net,
+          reason: 'payout ${p.id}: gross must equal commission + net');
+
+      // And the payout must equal the bookings it was built from. This is the
+      // number a partner would query, so it has to survive the round trip.
+      final itemsRaw = await api.get<dynamic>('/partner/payouts/${p.id}/items');
+      final items = mapListOf(Map<String, dynamic>.from(itemsRaw as Map)['items']);
+      expect(items, isNotEmpty, reason: 'payout ${p.id} has no items');
+      expect(
+        items.fold<int>(0, (sum, i) => sum + intOf(i['net'])),
+        p.net,
+        reason: 'payout ${p.id} must equal the sum of its bookings',
+      );
     }
   });
 }

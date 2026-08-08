@@ -172,7 +172,9 @@ class BookingCard extends StatelessWidget {
                   const SizedBox(width: 5),
                   Expanded(
                     child: Text(
-                      'ຫ້ອງ ${booking.room} · ${booking.guests} ຄົນ',
+                      '${booking.roomType ?? 'ຫ້ອງ'}'
+                      '${booking.quantity > 1 ? ' × ${booking.quantity}' : ''}'
+                      ' · ${booking.guests} ຄົນ',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12.5, color: C.soft),

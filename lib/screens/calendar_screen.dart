@@ -11,9 +11,9 @@ import '../widgets/common.dart';
 
 /// The pricing calendar.
 ///
-/// Nights already sold are shown but cannot be selected: the backend refuses to
-/// reprice or reopen a booked night, so letting them be picked would only earn
-/// a "skippedBooked" the partner has to work out for themselves.
+/// Each cell shows the nightly rate and how many of the room type are still
+/// free — `3/8`. Inventory is a count in v2, not a free/sold flag, so every
+/// night can be repriced or closed regardless of what has already sold.
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
 
@@ -24,14 +24,21 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   final Set<String> _selected = {};
 
+  /// Every night is selectable.
+  ///
+  /// v1 locked a booked night because a room was either free or sold. A room
+  /// type has several rooms, so a night with two of eight sold is still on sale
+  /// — and the partner may well want to reprice the remaining six.
   void _toggle(CalendarDay day) {
-    if (day.isBooked) return;
     setState(() {
       _selected.contains(day.date) ? _selected.remove(day.date) : _selected.add(day.date);
     });
   }
 
-  Future<void> _applyToSelection({required String roomId, required List<CalendarDay> days}) async {
+  Future<void> _applyToSelection({
+    required String roomTypeId,
+    required List<CalendarDay> days,
+  }) async {
     if (_selected.isEmpty) return;
 
     final priceField = TextEditingController();
@@ -82,7 +89,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: () => Navigator.of(ctx).pop(
-                (price: null, status: anyClosed ? 'available' : 'closed'),
+                // `inventory_status` is open|closed — "available" was v1's word
+                // and the enum rejects it.
+                (price: null, status: anyClosed ? 'open' : 'closed'),
               ),
               icon: Icon(anyClosed ? Icons.lock_open : Icons.lock_outline, size: 18),
               label: Text(anyClosed ? 'ເປີດຂາຍຄືນ' : 'ປິດຂາຍ'),
@@ -101,7 +110,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       var updated = 0;
       for (final run in runs) {
         updated += await ref.read(actionsProvider).setAvailability(
-              roomId: roomId,
+              roomTypeId: roomTypeId,
               from: run.from,
               // `to` is exclusive, like a stay's check-out.
               to: addDays(run.to, 1),
@@ -139,13 +148,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rooms = ref.watch(allRoomsProvider);
+    final roomTypes = ref.watch(allRoomTypesProvider);
     final month = ref.watch(calendarMonthProvider);
-    final selectedRoom = ref.watch(selectedRoomProvider);
+    final selected = ref.watch(selectedRoomTypeProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('ປະຕິທິນ & ລາຄາ')),
-      body: rooms.when(
+      body: roomTypes.when(
         loading: () => const LoadingBlock(),
         error: (e, _) => ErrorRetry(error: e, onRetry: () => ref.invalidate(propertiesProvider)),
         data: (list) {
@@ -156,30 +165,30 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             );
           }
 
-          final roomId = selectedRoom ?? list.first.room.id;
-          final calendar = ref.watch(roomCalendarProvider((roomId: roomId, month: month)));
+          final roomTypeId = selected ?? list.first.roomType.id;
+          final calendar = ref.watch(roomCalendarProvider((roomTypeId: roomTypeId, month: month)));
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: DropdownButtonFormField<String>(
-                  value: roomId,
+                  value: roomTypeId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'ຫ້ອງ'),
+                  decoration: const InputDecoration(labelText: 'ປະເພດຫ້ອງ'),
                   items: [
                     for (final e in list)
                       DropdownMenuItem(
-                        value: e.room.id,
+                        value: e.roomType.id,
                         child: Text(
-                          '${e.property.name} · ${e.room.label}',
+                          '${e.property.name} · ${e.roomType.label}',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                   ],
                   onChanged: (v) {
                     setState(_selected.clear);
-                    ref.read(selectedRoomProvider.notifier).set(v);
+                    ref.read(selectedRoomTypeProvider.notifier).set(v);
                   },
                 ),
               ),
@@ -241,7 +250,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         Expanded(
                           child: FilledButton(
                             onPressed: () => _applyToSelection(
-                              roomId: roomId,
+                              roomTypeId: roomTypeId,
                               days: calendar.value?.days ?? const [],
                             ),
                             child: Text('ແກ້ໄຂ ${_selected.length} ຄືນ'),
@@ -363,12 +372,12 @@ class _DayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final booked = day?.isBooked ?? false;
     final closed = day?.isClosed ?? false;
+    final full = day?.isFull ?? false;
 
     final background = selected
         ? C.accent
-        : booked
+        : full
             ? C.accentSoft
             : closed
                 ? C.neutralBg
@@ -376,7 +385,7 @@ class _DayCell extends StatelessWidget {
 
     final foreground = selected
         ? Colors.white
-        : booked
+        : full
             ? C.accentDark
             : closed
                 ? C.neutralFg
@@ -409,10 +418,22 @@ class _DayCell extends StatelessWidget {
             const SizedBox(height: 2),
             if (day != null)
               Text(
-                booked ? 'ຈອງ' : kipShort(day!.price).replaceFirst('₭', ''),
+                closed ? 'ປິດ' : kipShort(day!.price).replaceFirst('₭', ''),
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: TextStyle(fontSize: 9.5, color: foreground.withValues(alpha: 0.85)),
+              ),
+            // How many of this room type are left. The number is the whole
+            // point of a room type: "3/8" is sellable, "0/8" is not.
+            if (day != null && !closed)
+              Text(
+                '${day!.available}/${day!.total}',
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w600,
+                  color: foreground.withValues(alpha: 0.7),
+                ),
               ),
           ],
         ),
@@ -447,8 +468,8 @@ class _Legend extends StatelessWidget {
       spacing: 16,
       runSpacing: 8,
       children: [
-        swatch(C.surface, 'ວ່າງ'),
-        swatch(C.accentSoft, 'ຖືກຈອງ (ແກ້ບໍ່ໄດ້)'),
+        swatch(C.surface, 'ຍັງມີວ່າງ'),
+        swatch(C.accentSoft, 'ເຕັມ'),
         swatch(C.neutralBg, 'ປິດຂາຍ'),
         swatch(C.accent, 'ເລືອກຢູ່'),
       ],

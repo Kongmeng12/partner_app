@@ -78,6 +78,25 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   }
 
+  /// Opens the thread attached to this booking.
+  ///
+  /// A partner cannot start one — only a guest can — so if the guest has never
+  /// written, there is nothing to open and saying so is better than dropping
+  /// them into an empty screen with no way to begin.
+  Future<void> _openChat(BuildContext context) async {
+    final conversations = await ref.read(conversationsProvider.future);
+    final thread = conversations.items
+        .where((c) => c.bookingId == widget.bookingId)
+        .firstOrNull;
+
+    if (!context.mounted) return;
+    if (thread == null) {
+      showMessage(context, 'ແຂກຍັງບໍ່ໄດ້ເລີ່ມສົນທະນາສຳລັບການຈອງນີ້');
+      return;
+    }
+    context.go('/chats/${thread.id}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(bookingDetailProvider(widget.bookingId));
@@ -88,7 +107,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         actions: [
           IconButton(
             tooltip: 'ແຊັດກັບແຂກ',
-            onPressed: () => context.go('/bookings/${widget.bookingId}/chat'),
+            onPressed: () => _openChat(context),
             icon: const Icon(Icons.chat_bubble_outline),
           ),
           const SizedBox(width: 4),
@@ -148,7 +167,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   const SizedBox(height: 10),
                   if (b.guestEmail.isNotEmpty)
                     LabelledRow(label: 'ອີເມວ', value: b.guestEmail),
-                  if (b.guestTier != null) LabelledRow(label: 'ລະດັບ', value: b.guestTier!),
+
                 ],
               ),
             ),
@@ -161,7 +180,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   LabelledRow(label: 'ທີ່ພັກ', value: b.propertyName),
                   LabelledRow(
                     label: 'ຫ້ອງ',
-                    value: b.roomNo?.isNotEmpty == true ? '${b.roomName} · ${b.roomNo}' : b.roomName,
+                    value: b.roomQuantity > 1
+                        ? '${b.roomTypeName} × ${b.roomQuantity}'
+                        : b.roomTypeName,
                   ),
                   LabelledRow(label: 'ເຂົ້າພັກ', value: laoDate(b.checkIn), strong: true),
                   LabelledRow(label: 'ອອກ', value: laoDate(b.checkOut), strong: true),
@@ -179,60 +200,38 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   MoneyRow(label: 'ຄ່າຫ້ອງ', amount: b.subtotal),
                   // Walk-ins carry no platform service fee, so the row would
                   // just read ₭0 — hide it rather than explain a zero.
-                  if (b.fee > 0) MoneyRow(label: 'ຄ່າບໍລິການ', amount: b.fee),
+                  if (b.serviceFee > 0) MoneyRow(label: 'ຄ່າບໍລິການ', amount: b.serviceFee),
+                  if (b.tax > 0) MoneyRow(label: 'ພາສີ', amount: b.tax),
+                  if (b.cleaningFee > 0)
+                    MoneyRow(label: 'ຄ່າທຳຄວາມສະອາດ', amount: b.cleaningFee),
                   if (b.discount > 0)
-                    MoneyRow(
-                      label: 'ສ່ວນຫຼຸດ${b.promo != null ? ' (${strOf(b.promo!['code'])})' : ''}',
-                      amount: b.discount,
-                      negative: true,
-                    ),
+                    MoneyRow(label: 'ສ່ວນຫຼຸດ', amount: b.discount, negative: true),
                   const Divider(height: 20),
                   MoneyRow(label: 'ລວມທັງໝົດ', amount: b.total, strong: true),
                   if (b.paidAmount > 0) ...[
                     const SizedBox(height: 4),
                     MoneyRow(label: 'ຈ່າຍແລ້ວ', amount: b.paidAmount),
                   ],
+                  // What this stay is actually worth to the property, which is
+                  // the number the partner cares about — not the guest's total.
+                  const Divider(height: 20),
+                  MoneyRow(
+                    label: 'ຄອມມິຊຊັນ ${b.commissionRate}%',
+                    amount: b.commission,
+                    negative: true,
+                  ),
+                  MoneyRow(label: 'ຮັບສຸດທິ', amount: b.payout, strong: true),
                 ],
               ),
             ),
 
-            if (b.cancellations.isNotEmpty) ...[
+            if (b.specialRequest != null && b.specialRequest!.isNotEmpty) ...[
               const SizedBox(height: 14),
               SectionCard(
-                title: 'ການຍົກເລີກ',
-                child: Column(
-                  children: [
-                    for (final c in b.cancellations) ...[
-                      LabelledRow(label: 'ເຫດຜົນ', value: strOf(c['reason'], '—')),
-                      MoneyRow(label: 'ຄ່າທຳນຽມ', amount: intOf(c['fee'])),
-                      MoneyRow(label: 'ຄືນເງິນ', amount: intOf(c['refund_amount'])),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-
-            if (b.reviews.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionCard(
-                title: 'ຮີວິວຈາກແຂກ',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final r in b.reviews) ...[
-                      Text(
-                        '★' * intOf(r['stars']),
-                        style: const TextStyle(color: C.accent, fontSize: 16),
-                      ),
-                      if (strOf(r['text']).isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          strOf(r['text']),
-                          style: const TextStyle(fontSize: 13.5, color: C.soft, height: 1.5),
-                        ),
-                      ],
-                    ],
-                  ],
+                title: 'ຄຳຂໍພິເສດຈາກແຂກ',
+                child: Text(
+                  b.specialRequest!,
+                  style: const TextStyle(fontSize: 13.5, color: C.soft, height: 1.6),
                 ),
               ),
             ],

@@ -77,6 +77,16 @@ String laoDateTime(Object? value) {
   return '${d.day} ${_laoMonthsShort[d.month - 1]} ${d.year} · $hh:$mm';
 }
 
+/// `14:30` — the time alone, for a chat bubble where the day is already
+/// obvious from where the message sits in the thread.
+String laoTime(Object? value) {
+  if (value == null) return '';
+  final parsed = value is DateTime ? value : DateTime.tryParse(value.toString());
+  if (parsed == null) return '';
+  final d = parsed.toLocal();
+  return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
 /// `10 ນາທີທີ່ແລ້ວ`
 String laoAgo(Object? value) {
   if (value == null) return '—';

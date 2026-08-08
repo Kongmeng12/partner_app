@@ -89,10 +89,21 @@ class ReviewsScreen extends ConsumerWidget {
                               ),
                             ],
                           ),
-                          if (review.text?.isNotEmpty == true) ...[
+                          if (review.title?.isNotEmpty == true) ...[
                             const SizedBox(height: 10),
                             Text(
-                              review.text!,
+                              review.title!,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: C.text,
+                              ),
+                            ),
+                          ],
+                          if (review.comment?.isNotEmpty == true) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              review.comment!,
                               style: const TextStyle(fontSize: 13.5, color: C.soft, height: 1.55),
                             ),
                           ],

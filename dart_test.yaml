@@ -2,8 +2,11 @@
 # excluded from the default run so `flutter test` stays hermetic and fast, and
 # does not fail on a machine with no API.
 #
-#   flutter test               # the 31 offline tests
-#   flutter test --tags live   # the 9 end-to-end checks against the real API
+#   flutter test                            # the 31 offline tests
+#   flutter test --tags live --run-skipped  # the 10 checks against the real API
+#
+# `--run-skipped` is required: the `skip` below is what excludes them by
+# default, and asking for the tag does not by itself override a skip.
 tags:
   live:
     skip: "needs a running backend — run with `flutter test --tags live`"

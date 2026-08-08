@@ -73,10 +73,9 @@ class AuthNotifier extends Notifier<AuthState> {
     }
 
     try {
-      final me = await _api.get<dynamic>('/auth/partner/me');
-      _applyPartner(Partner.fromJson(Map<String, dynamic>.from(me as Map)));
+      _applyPartner(await _loadPartner());
     } on ApiException catch (e) {
-      // 403 means the application was rejected; the strategy refuses the token.
+      // 403 means the account is not a partner at all; the guard refuses it.
       if (e.isUnauthorised || e.isForbidden) {
         await _tokens.clear();
         state = AuthState(stage: AuthStage.signedOut, error: e.isForbidden ? e.message : null);
@@ -91,9 +90,8 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<bool> signIn(String email, String password) async {
     state = const AuthState(stage: AuthStage.restoring);
     try {
-      final res = await _api.partnerLogin(email.trim(), password);
-      await _saveSession(res);
-      _applyPartner(Partner.fromJson(Map<String, dynamic>.from(res['partner'] as Map)));
+      await _saveSession(await _api.partnerLogin(email.trim(), password));
+      _applyPartner(await _loadPartner());
       return true;
     } on ApiException catch (e) {
       state = AuthState(stage: AuthStage.signedOut, error: e.message);
@@ -106,9 +104,8 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<bool> register(Map<String, dynamic> body) async {
     state = const AuthState(stage: AuthStage.restoring);
     try {
-      final res = await _api.partnerRegister(body);
-      await _saveSession(res);
-      _applyPartner(Partner.fromJson(Map<String, dynamic>.from(res['partner'] as Map)));
+      await _saveSession(await _api.partnerRegister(body));
+      _applyPartner(await _loadPartner());
       return true;
     } on ApiException catch (e) {
       state = AuthState(stage: AuthStage.signedOut, error: e.message);
@@ -130,15 +127,26 @@ class AuthNotifier extends Notifier<AuthState> {
     );
   }
 
-  /// Re-reads `/auth/partner/me`, so the "under review" screen can find out it
-  /// has been approved without a sign-out.
+  /// Re-reads the profile, so the "under review" screen can find out it has
+  /// been approved without a sign-out.
   Future<void> refreshPartner() async {
     try {
-      final me = await _api.get<dynamic>('/auth/partner/me');
-      _applyPartner(Partner.fromJson(Map<String, dynamic>.from(me as Map)));
+      _applyPartner(await _loadPartner());
     } on ApiException {
       // Leave the current stage alone: a failed poll is not a status change.
     }
+  }
+
+  /// The partner profile.
+  ///
+  /// `/auth/me` returns the account — one shape for guests, partners and staff
+  /// alike — while `/partner/me` returns the business: approval status, both
+  /// commission rates, the bank accounts. This app needs the business, and the
+  /// endpoint is readable before approval, which is what the "under review"
+  /// screen polls.
+  Future<Partner> _loadPartner() async {
+    final me = await _api.get<dynamic>('/partner/me');
+    return Partner.fromJson(Map<String, dynamic>.from(me as Map));
   }
 
   void _applyPartner(Partner partner) {

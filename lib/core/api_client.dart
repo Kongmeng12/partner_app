@@ -174,20 +174,34 @@ class ApiClient {
 
   // ── auth, which must not carry or renew a token ──────────────────────────
 
+  /// Signs in.
+  ///
+  /// There is one login endpoint for the whole platform — guests, partners and
+  /// staff all post here — so the role has to be checked afterwards. A guest's
+  /// password is perfectly valid and would return real tokens; they simply open
+  /// nothing in this app, and saying so is kinder than a screen of 403s.
   Future<Map<String, dynamic>> partnerLogin(String email, String password) async {
     final data = await _send<dynamic>(
       'POST',
-      '/auth/partner/login',
+      '/auth/login',
       body: {'email': email, 'password': password},
       anonymous: true,
     );
-    return Map<String, dynamic>.from(data as Map);
+    final map = Map<String, dynamic>.from(data as Map);
+    final role = (map['user'] as Map?)?['role'];
+    if (role != 'PARTNER') {
+      throw ApiException(
+        403,
+        'ບັນຊີນີ້ບໍ່ແມ່ນບັນຊີທີ່ພັກ · This account is not a property owner',
+      );
+    }
+    return map;
   }
 
   Future<Map<String, dynamic>> partnerRegister(Map<String, dynamic> body) async {
     final data = await _send<dynamic>(
       'POST',
-      '/auth/partner/register',
+      '/auth/register/partner',
       body: body,
       anonymous: true,
     );

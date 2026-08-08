@@ -29,7 +29,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
   final _phone = TextEditingController();
   final _email = TextEditingController();
 
-  String? _roomId;
+  String? _roomTypeId;
   DateTime _checkIn = todayUtc();
   DateTime _checkOut = addDays(todayUtc(), 1);
   int _guests = 1;
@@ -70,15 +70,15 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    if (_roomId == null) {
-      showMessage(context, 'ເລືອກຫ້ອງກ່ອນ', error: true);
+    if (_roomTypeId == null) {
+      showMessage(context, 'ເລືອກປະເພດຫ້ອງກ່ອນ', error: true);
       return;
     }
 
     setState(() => _busy = true);
     try {
       final booking = await ref.read(actionsProvider).createWalkIn(
-            roomId: _roomId!,
+            roomTypeId: _roomTypeId!,
             checkIn: _checkIn,
             checkOut: _checkOut,
             guests: _guests,
@@ -101,12 +101,12 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rooms = ref.watch(allRoomsProvider);
+    final roomTypes = ref.watch(allRoomTypesProvider);
     final nights = _checkOut.difference(_checkIn).inDays;
 
     return Scaffold(
       appBar: AppBar(title: const Text('ບັນທຶກ Walk-in')),
-      body: rooms.when(
+      body: roomTypes.when(
         loading: () => const LoadingBlock(),
         error: (e, _) => ErrorRetry(error: e, onRetry: () => ref.invalidate(propertiesProvider)),
         data: (list) {
@@ -117,7 +117,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
             );
           }
 
-          final selected = list.where((e) => e.room.id == _roomId).firstOrNull;
+          final selected = list.where((e) => e.roomType.id == _roomTypeId).firstOrNull;
 
           return Form(
             key: _form,
@@ -129,24 +129,26 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                   child: Column(
                     children: [
                       DropdownButtonFormField<String>(
-                        value: _roomId,
+                        value: _roomTypeId,
                         isExpanded: true,
                         decoration: const InputDecoration(labelText: 'ຫ້ອງ'),
                         hint: const Text('ເລືອກຫ້ອງ'),
                         items: [
                           for (final e in list)
                             DropdownMenuItem(
-                              value: e.room.id,
+                              value: e.roomType.id,
                               child: Text(
-                                '${e.room.label} · ${kip(e.room.basePrice)}',
+                                '${e.roomType.label} · ${kip(e.roomType.basePrice)}',
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                         ],
                         onChanged: (v) => setState(() {
-                          _roomId = v;
-                          final room = list.where((e) => e.room.id == v).firstOrNull?.room;
-                          if (room != null && _guests > room.capacity) _guests = room.capacity;
+                          _roomTypeId = v;
+                          final rt = list.where((e) => e.roomType.id == v).firstOrNull?.roomType;
+                          if (rt != null && _guests > rt.maxOccupancy) {
+                            _guests = rt.maxOccupancy;
+                          }
                         }),
                       ),
                       const SizedBox(height: 14),
@@ -191,7 +193,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                           ),
                           IconButton(
-                            onPressed: selected == null || _guests < selected.room.capacity
+                            onPressed: selected == null || _guests < selected.roomType.maxOccupancy
                                 ? () => setState(() => _guests++)
                                 : null,
                             icon: const Icon(Icons.add_circle_outline),
@@ -202,7 +204,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'ຫ້ອງນີ້ຮັບໄດ້ສູງສຸດ ${selected.room.capacity} ຄົນ',
+                            'ຫ້ອງນີ້ຮັບໄດ້ສູງສຸດ ${selected.roomType.maxOccupancy} ຄົນ',
                             style: const TextStyle(fontSize: 12, color: C.faint),
                           ),
                         ),

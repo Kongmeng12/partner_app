@@ -95,15 +95,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (_, __) => const BookingsScreen(),
                 routes: [
                   GoRoute(path: 'walk-in', builder: (_, __) => const WalkInScreen()),
+                  // No chat route under a booking: conversations are keyed by
+                  // conversation, not booking, and only a guest can open one.
                   GoRoute(
                     path: ':id',
                     builder: (_, s) => BookingDetailScreen(bookingId: s.pathParameters['id']!),
-                    routes: [
-                      GoRoute(
-                        path: 'chat',
-                        builder: (_, s) => ChatScreen(bookingId: s.pathParameters['id']!),
-                      ),
-                    ],
                   ),
                 ],
               ),
@@ -120,7 +116,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: ':id',
-                    builder: (_, s) => ChatScreen(bookingId: s.pathParameters['id']!),
+                    builder: (_, s) =>
+                        ChatScreen(conversationId: s.pathParameters['id']!),
                   ),
                 ],
               ),

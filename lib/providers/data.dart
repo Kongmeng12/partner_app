@@ -27,22 +27,23 @@ final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((ref) asy
   return PartnerDashboard(Map<String, dynamic>.from(data as Map));
 });
 
-// ── properties and rooms ────────────────────────────────────────────────────
+// ── properties and room types ───────────────────────────────────────────────
 
 final propertiesProvider = FutureProvider<List<Property>>((ref) async {
   final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/properties');
   return mapListOf(data).map(Property.fromJson).toList();
 });
 
-typedef PropertyRoom = ({Property property, Room room});
+typedef PropertyRoomType = ({Property property, RoomType roomType});
 
-/// Every active room the partner owns, flattened — the calendar and the walk-in
-/// form both need a room list without caring which property it sits on.
-final allRoomsProvider = FutureProvider<List<PropertyRoom>>((ref) async {
+/// Every active room type the partner owns, flattened — the calendar and the
+/// walk-in form both need the list without caring which property it sits on.
+final allRoomTypesProvider = FutureProvider<List<PropertyRoomType>>((ref) async {
   final properties = await ref.watch(propertiesProvider.future);
   return [
     for (final p in properties)
-      for (final r in p.rooms.where((r) => r.isActive)) (property: p, room: r),
+      for (final rt in p.roomTypes.where((rt) => rt.isActive))
+        (property: p, roomType: rt),
   ];
 });
 
@@ -99,6 +100,14 @@ final payoutsProvider = FutureProvider.autoDispose<PayoutSummary>((ref) async {
   );
 });
 
+/// The bookings behind one payout — the reconciliation view. Every payout row
+/// must equal the sum of these, which is a database CHECK, not a hope.
+final payoutItemsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/payouts/$id/items');
+  return mapListOf(Map<String, dynamic>.from(data as Map)['items']);
+});
+
 typedef ReviewSummary = ({List<Review> items, int total, double? averageStars});
 
 final reviewsProvider = FutureProvider.autoDispose<ReviewSummary>((ref) async {
@@ -127,12 +136,24 @@ final notificationsProvider = FutureProvider.autoDispose<NotificationFeed>((ref)
 
 // ── chat ────────────────────────────────────────────────────────────────────
 
+typedef ConversationList = ({List<Conversation> items, int unreadTotal});
+
+final conversationsProvider = FutureProvider.autoDispose<ConversationList>((ref) async {
+  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/conversations');
+  final j = Map<String, dynamic>.from(data as Map);
+  return (
+    items: mapListOf(j['items']).map(Conversation.fromJson).toList(),
+    unreadTotal: intOf(j['unreadTotal']),
+  );
+});
+
+/// The badge on the chat tab. Cheap enough to poll while the app is open.
 final unreadChatProvider = FutureProvider.autoDispose<int>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/chat/unread');
+  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/conversations/unread');
   return intOf(Map<String, dynamic>.from(data as Map)['total']);
 });
 
-/// One booking's conversation, polled while the screen is open.
+/// One thread, polled while the screen is open.
 ///
 /// The cursor is the last message **id**, not a timestamp: two messages written
 /// in the same millisecond would make a time cursor either skip one or repeat
@@ -144,9 +165,9 @@ final chatProvider =
 );
 
 class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
-  ChatNotifier(this.bookingId);
+  ChatNotifier(this.conversationId);
 
-  final String bookingId;
+  final String conversationId;
 
   Timer? _timer;
   int _cursor = 0;
@@ -165,11 +186,11 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
 
   Future<List<ChatMessage>> _fetch({int? since}) async {
     final data = await _api.get<dynamic>(
-      '/partner/chat/bookings/$bookingId/messages',
+      '/partner/conversations/$conversationId/messages',
       query: {if (since != null && since > 0) 'since': since},
     );
     final j = Map<String, dynamic>.from(data as Map);
-    final messages = mapListOf(j['messages']).map(ChatMessage.fromJson).toList();
+    final messages = mapListOf(j['items']).map(ChatMessage.fromJson).toList();
     if (messages.isNotEmpty) _cursor = messages.last.seq;
     return messages;
   }
@@ -179,9 +200,12 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
       final fresh = await _fetch(since: _cursor);
       if (fresh.isEmpty) return;
       state = AsyncData([...?state.value, ...fresh]);
+      // New messages arrived while the thread is open, so they are read the
+      // moment they land.
+      await markRead();
     } on ApiException {
       // A dropped poll is not worth an error banner — the next tick retries and
-      // the messages already on screen are still valid.
+      // what is already on screen is still valid.
     }
   }
 
@@ -190,36 +214,60 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
     if (text.isEmpty) return;
 
     final data = await _api.post<dynamic>(
-      '/partner/chat/bookings/$bookingId/messages',
-      body: {'body': text},
+      '/partner/conversations/$conversationId/messages',
+      body: {'text': text},
     );
     final sent = ChatMessage.fromJson(Map<String, dynamic>.from(data as Map));
     _cursor = sent.seq;
     state = AsyncData([...?state.value, sent]);
-    ref.invalidate(unreadChatProvider);
+    ref.invalidate(conversationsProvider);
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    await _api.delete<dynamic>('/partner/conversations/$conversationId/messages/$messageId');
+    state = AsyncData([
+      for (final m in state.value ?? const <ChatMessage>[])
+        if (m.id == messageId)
+          ChatMessage(
+            id: m.id,
+            senderId: m.senderId,
+            senderName: m.senderName,
+            mine: m.mine,
+            type: m.type,
+            text: null,
+            isDeleted: true,
+            isEdited: m.isEdited,
+            replyToId: m.replyToId,
+            createdAt: m.createdAt,
+          )
+        else
+          m,
+    ]);
+    ref.invalidate(conversationsProvider);
   }
 
   Future<void> markRead() async {
     try {
-      await _api.patch<dynamic>('/partner/chat/bookings/$bookingId/read');
+      await _api.post<dynamic>('/partner/conversations/$conversationId/read');
       ref.invalidate(unreadChatProvider);
+      ref.invalidate(conversationsProvider);
     } on ApiException {
-      // Cosmetic only.
+      // Cosmetic only — the cursor moves again on the next read.
     }
   }
 }
 
 // ── calendar ────────────────────────────────────────────────────────────────
 
-/// Which room the calendar screen is showing.
-final selectedRoomProvider =
-    NotifierProvider<SelectedRoom, String?>(SelectedRoom.new);
+/// Which room type the calendar screen is showing.
+final selectedRoomTypeProvider =
+    NotifierProvider<SelectedRoomType, String?>(SelectedRoomType.new);
 
-class SelectedRoom extends Notifier<String?> {
+class SelectedRoomType extends Notifier<String?> {
   @override
   String? build() => null;
 
-  void set(String? roomId) => state = roomId;
+  void set(String? roomTypeId) => state = roomTypeId;
 }
 
 /// The month the calendar is scrolled to, as UTC midnight on the 1st.
@@ -237,7 +285,7 @@ class CalendarMonth extends Notifier<DateTime> {
       state = DateTime.utc(state.year, state.month + months, 1);
 }
 
-typedef CalendarKey = ({String roomId, DateTime month});
+typedef CalendarKey = ({String roomTypeId, DateTime month});
 
 final roomCalendarProvider =
     FutureProvider.autoDispose.family<RoomCalendar, CalendarKey>((ref, key) async {
@@ -245,7 +293,7 @@ final roomCalendarProvider =
   final to = DateTime.utc(key.month.year, key.month.month + 1, 1);
 
   final data = await ref.watch(apiClientProvider).get<dynamic>(
-        '/partner/rooms/${key.roomId}/availability',
+        '/partner/room-types/${key.roomTypeId}/calendar',
         query: {'from': apiDay(from), 'to': apiDay(to)},
       );
   return RoomCalendar.fromJson(Map<String, dynamic>.from(data as Map));
@@ -292,21 +340,23 @@ class PartnerActions {
   }
 
   Future<Map<String, dynamic>> createWalkIn({
-    required String roomId,
+    required String roomTypeId,
     required DateTime checkIn,
     required DateTime checkOut,
     required int guests,
     required String guestName,
     required String guestPhone,
     String? guestEmail,
+    int quantity = 1,
   }) async {
     final data = await _api.post<dynamic>(
       '/partner/bookings/walk-in',
       body: {
-        'roomId': roomId,
+        'roomTypeId': roomTypeId,
         'checkIn': apiDay(checkIn),
         'checkOut': apiDay(checkOut),
         'guests': guests,
+        'quantity': quantity,
         'guestName': guestName,
         'guestPhone': guestPhone,
         if (guestEmail != null && guestEmail.isNotEmpty) 'guestEmail': guestEmail,
@@ -317,45 +367,82 @@ class PartnerActions {
     return Map<String, dynamic>.from(data as Map);
   }
 
-  /// Sets price and/or status over a date range. `to` is exclusive, like a
+  /// Sets price and/or open-closed over a date range. `to` is exclusive, like a
   /// stay's check-out.
+  ///
+  /// Two endpoints back this, not one: price lives in `room_prices` and
+  /// open/closed in `room_inventory`, and they are deliberately separate —
+  /// closing a night must not disturb the rate it will reopen at. The screen
+  /// still asks for one thing, so the split is handled here.
+  ///
+  /// Returns the number of nights changed. When both are set they cover the
+  /// same range, so either count is the answer.
   Future<int> setAvailability({
-    required String roomId,
+    required String roomTypeId,
     required DateTime from,
     required DateTime to,
     int? price,
     String? status,
   }) async {
-    final data = await _api.patch<dynamic>(
-      '/partner/rooms/$roomId/availability',
-      body: {
-        'from': apiDay(from),
-        'to': apiDay(to),
-        if (price != null) 'price': price,
-        if (status != null) 'status': status,
-      },
-    );
+    final range = {'from': apiDay(from), 'to': apiDay(to)};
+    var nights = 0;
+
+    if (price != null) {
+      final data = await _api.patch<dynamic>(
+        '/partner/room-types/$roomTypeId/prices',
+        body: {...range, 'price': price},
+      );
+      nights = intOf(Map<String, dynamic>.from(data as Map)['nights']);
+    }
+
+    if (status != null) {
+      final data = await _api.patch<dynamic>(
+        '/partner/room-types/$roomTypeId/inventory',
+        body: {...range, 'status': status},
+      );
+      nights = intOf(Map<String, dynamic>.from(data as Map)['nights']);
+    }
+
     ref.invalidate(roomCalendarProvider);
-    return intOf(Map<String, dynamic>.from(data as Map)['updated']);
+    return nights;
   }
 
-  Future<void> saveRoom({
-    String? roomId,
+  /// Changes how many rooms of this type exist on those nights.
+  ///
+  /// The database refuses a count below what is already sold — those guests are
+  /// booked — and the API turns that into a message rather than a 500.
+  Future<int> setRoomCount({
+    required String roomTypeId,
+    required DateTime from,
+    required DateTime to,
+    required int totalCount,
+  }) async {
+    final data = await _api.patch<dynamic>(
+      '/partner/room-types/$roomTypeId/inventory',
+      body: {'from': apiDay(from), 'to': apiDay(to), 'totalCount': totalCount},
+    );
+    ref.invalidate(roomCalendarProvider);
+    ref.invalidate(propertiesProvider);
+    return intOf(Map<String, dynamic>.from(data as Map)['nights']);
+  }
+
+  Future<void> saveRoomType({
+    String? roomTypeId,
     String? propertyId,
     required Map<String, dynamic> body,
   }) async {
-    if (roomId != null) {
-      await _api.patch<dynamic>('/partner/properties/rooms/$roomId', body: body);
+    if (roomTypeId != null) {
+      await _api.patch<dynamic>('/partner/room-types/$roomTypeId', body: body);
     } else {
-      await _api.post<dynamic>('/partner/properties/$propertyId/rooms', body: body);
+      await _api.post<dynamic>('/partner/properties/$propertyId/room-types', body: body);
     }
     ref.invalidate(propertiesProvider);
   }
 
-  /// The API deactivates rather than deletes a room that carries history, and
-  /// says which it did — the caller shows the honest message.
-  Future<bool> deleteRoom(String roomId) async {
-    final data = await _api.delete<dynamic>('/partner/properties/rooms/$roomId');
+  /// The API deactivates rather than deletes a room type that carries history,
+  /// and says which it did — the caller shows the honest message.
+  Future<bool> deleteRoomType(String roomTypeId) async {
+    final data = await _api.delete<dynamic>('/partner/room-types/$roomTypeId');
     ref.invalidate(propertiesProvider);
     final j = Map<String, dynamic>.from(data as Map);
     return j['deleted'] == true;
@@ -371,18 +458,36 @@ class PartnerActions {
     ref.invalidate(propertiesProvider);
   }
 
-  Future<void> deletePropertyPhoto(String propertyId, int index) async {
-    await _api.delete<dynamic>('/partner/properties/$propertyId/photos/$index');
+  /// Photos are rows now, so they are addressed by id. Deleting by position was
+  /// only ever safe while they lived in an ordered jsonb array.
+  Future<void> deletePropertyPhoto(String propertyId, String imageId) async {
+    await _api.delete<dynamic>('/partner/properties/$propertyId/photos/$imageId');
     ref.invalidate(propertiesProvider);
   }
 
-  Future<void> uploadRoomPhoto(String roomId, MultipartFile file) async {
-    await _api.upload<dynamic>('/partner/rooms/$roomId/photos', file: file);
+  Future<void> setPropertyCover(String propertyId, String imageId) async {
+    await _api.patch<dynamic>('/partner/properties/$propertyId/photos/$imageId/cover');
+    ref.invalidate(propertiesProvider);
+  }
+
+  Future<void> uploadRoomTypePhoto(String roomTypeId, MultipartFile file) async {
+    await _api.upload<dynamic>('/partner/room-types/$roomTypeId/photos', file: file);
+    ref.invalidate(propertiesProvider);
+  }
+
+  Future<void> deleteRoomTypePhoto(String roomTypeId, String imageId) async {
+    await _api.delete<dynamic>('/partner/room-types/$roomTypeId/photos/$imageId');
     ref.invalidate(propertiesProvider);
   }
 
   Future<void> updateProfile(Map<String, dynamic> body) async {
     await _api.patch<dynamic>('/partner/me', body: body);
+    ref.invalidate(profileProvider);
+    await ref.read(authProvider.notifier).refreshPartner();
+  }
+
+  Future<void> addBankAccount(Map<String, dynamic> body) async {
+    await _api.post<dynamic>('/partner/bank-accounts', body: body);
     ref.invalidate(profileProvider);
     await ref.read(authProvider.notifier).refreshPartner();
   }

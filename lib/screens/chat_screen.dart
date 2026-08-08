@@ -4,81 +4,157 @@ import 'package:go_router/go_router.dart';
 
 import '../core/api_client.dart';
 import '../core/dates.dart';
+import '../core/money.dart';
 import '../models/models.dart';
 import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 
-/// The conversations list — every booking the partner can talk about, with the
-/// unread ones first.
+/// Every thread this property is part of.
+///
+/// A partner never starts a conversation — only a guest can, which is what
+/// keeps the platform from becoming a channel for properties to message people
+/// who never contacted them. So there is no "new message" button here.
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bookings = ref.watch(bookingsProvider);
+    final conversations = ref.watch(conversationsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('ແຊັດກັບແຂກ')),
-      body: bookings.when(
-        loading: () => const LoadingBlock(),
-        error: (e, _) => ErrorRetry(error: e, onRetry: () => ref.invalidate(bookingsProvider)),
-        data: (page) {
-          // A cancelled or long-finished stay is rarely worth chatting about,
-          // so the list leads with the ones still in play.
-          final items = [...page.items]..sort((a, b) {
-              int rank(BookingSummary x) => switch (x.status) {
-                    'staying' => 0,
-                    'confirmed' => 1,
-                    'pending' => 2,
-                    'done' => 3,
-                    _ => 4,
-                  };
-              return rank(a).compareTo(rank(b));
-            });
+      appBar: AppBar(title: const Text('ແຊັດ')),
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(conversationsProvider),
+        child: conversations.when(
+          loading: () => const LoadingBlock(),
+          error: (e, _) => ErrorRetry(
+            error: e,
+            onRetry: () => ref.invalidate(conversationsProvider),
+          ),
+          data: (data) {
+            if (data.items.isEmpty) {
+              return ListView(
+                children: const [
+                  SizedBox(height: 80),
+                  EmptyState(
+                    message: 'ຍັງບໍ່ມີຂໍ້ຄວາມ\nແຂກຈະເປັນຜູ້ເລີ່ມສົນທະນາກ່ອນ',
+                    icon: Icons.chat_bubble_outline,
+                  ),
+                ],
+              );
+            }
 
-          if (items.isEmpty) {
-            return const EmptyState(
-              message: 'ຍັງບໍ່ມີການຈອງ ຈຶ່ງຍັງບໍ່ມີແຊັດ',
-              icon: Icons.chat_bubble_outline,
-            );
-          }
-
-          return RefreshIndicator(
-            color: C.accent,
-            onRefresh: () async => ref.invalidate(bookingsProvider),
-            child: ListView.separated(
+            return ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(indent: 72, height: 1),
-              itemBuilder: (_, i) {
-                final b = items[i];
-                return ListTile(
-                  leading: Avatar(name: b.guest),
-                  title: Text(
-                    b.guest,
-                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${b.code} · ${laoDateRange(b.checkIn, b.checkOut)}',
-                    style: const TextStyle(fontSize: 12, color: C.muted),
-                  ),
-                  trailing: StatusPill(map: bookingStatusPill, status: b.status, compact: true),
-                  onTap: () => context.go('/chats/${b.id}'),
-                );
-              },
-            ),
-          );
-        },
+              itemCount: data.items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+              itemBuilder: (_, i) => _ConversationTile(conversation: data.items[i]),
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.bookingId});
+class _ConversationTile extends StatelessWidget {
+  const _ConversationTile({required this.conversation});
 
-  final String bookingId;
+  final Conversation conversation;
+
+  @override
+  Widget build(BuildContext context) {
+    final unread = conversation.unread > 0;
+
+    return ListTile(
+      onTap: () => context.go('/chats/${conversation.id}'),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: CircleAvatar(
+        radius: 22,
+        backgroundColor: unread ? C.accentSoft : C.neutralBg,
+        child: Text(
+          initials(conversation.counterpartName),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: unread ? C.accentDark : C.soft,
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              conversation.counterpartName,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
+                color: C.text,
+              ),
+            ),
+          ),
+          if (conversation.lastMessageAt != null)
+            Text(
+              laoAgo(conversation.lastMessageAt),
+              style: const TextStyle(fontSize: 11, color: C.faint),
+            ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                // A deleted message keeps its place in the thread but has no
+                // text, so the preview says so rather than showing nothing.
+                conversation.lastMessage == null
+                    ? 'ຂໍ້ຄວາມຖືກລຶບແລ້ວ'
+                    : '${conversation.lastMessageMine ? 'ທ່ານ: ' : ''}${conversation.lastMessage}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: unread ? C.text : C.muted,
+                  fontStyle: conversation.lastMessage == null ? FontStyle.italic : null,
+                ),
+              ),
+            ),
+            if (unread) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: C.accent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${conversation.unread}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One thread.
+///
+/// Keyed by conversation, not booking: a conversation may have no booking
+/// behind it at all, and a guest who books twice keeps one thread rather than
+/// splitting the history in half.
+class ChatScreen extends ConsumerStatefulWidget {
+  const ChatScreen({super.key, required this.conversationId});
+
+  final String conversationId;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -92,10 +168,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    // Opening the thread is the moment the partner has seen it.
-    Future.microtask(
-      () => ref.read(chatProvider(widget.bookingId).notifier).markRead(),
-    );
+    // Opening the thread is reading it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(chatProvider(widget.conversationId).notifier).markRead();
+    });
   }
 
   @override
@@ -106,7 +182,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _scrollToEnd() {
-    if (!_scroll.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
       _scroll.animateTo(
@@ -122,35 +197,67 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (text.isEmpty || _sending) return;
 
     setState(() => _sending = true);
+    // Cleared immediately: a partner typing the next line should not have to
+    // wait for the round trip, and the text is already captured.
+    _input.clear();
+
     try {
-      await ref.read(chatProvider(widget.bookingId).notifier).send(text);
-      _input.clear();
+      await ref.read(chatProvider(widget.conversationId).notifier).send(text);
       _scrollToEnd();
     } on ApiException catch (e) {
-      if (mounted) showMessage(context, e.message, error: true);
+      if (mounted) {
+        _input.text = text; // put it back rather than lose what they wrote
+        showMessage(context, e.message, error: true);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
+  Future<void> _confirmDelete(ChatMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ລຶບຂໍ້ຄວາມນີ້?'),
+        content: const Text('ແຂກຈະເຫັນວ່າ "ຂໍ້ຄວາມຖືກລຶບແລ້ວ" ແທນເນື້ອໃນ'),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('ຍົກເລີກ')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: C.dangerFg),
+            onPressed: () => ctx.pop(true),
+            child: const Text('ລຶບ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(chatProvider(widget.conversationId).notifier).deleteMessage(message.id);
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final messages = ref.watch(chatProvider(widget.bookingId));
-    final booking = ref.watch(bookingDetailProvider(widget.bookingId));
-
-    // New messages arriving from the poll should bring the view with them.
-    ref.listen(chatProvider(widget.bookingId), (_, __) => _scrollToEnd());
+    final messages = ref.watch(chatProvider(widget.conversationId));
+    final conversations = ref.watch(conversationsProvider);
+    final conversation = conversations.value?.items
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
 
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(booking.value?.guestName ?? 'ແຊັດ'),
-            Text(
-              booking.value?.code ?? '',
-              style: const TextStyle(fontSize: 11.5, color: C.muted, fontWeight: FontWeight.w500),
-            ),
+            Text(conversation?.counterpartName ?? 'ແຊັດ', style: const TextStyle(fontSize: 16)),
+            if (conversation?.bookingCode != null)
+              Text(
+                conversation!.bookingCode!,
+                style: const TextStyle(fontSize: 11.5, color: C.muted),
+              ),
           ],
         ),
       ),
@@ -161,62 +268,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               loading: () => const LoadingBlock(),
               error: (e, _) => ErrorRetry(
                 error: e,
-                onRetry: () => ref.invalidate(chatProvider(widget.bookingId)),
+                onRetry: () => ref.invalidate(chatProvider(widget.conversationId)),
               ),
-              data: (list) => list.isEmpty
-                  ? const EmptyState(
-                      message: 'ຍັງບໍ່ມີຂໍ້ຄວາມ\nທັກທາຍແຂກກ່ອນໄດ້ເລີຍ',
-                      icon: Icons.chat_bubble_outline,
-                    )
-                  : ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-                      itemCount: list.length,
-                      itemBuilder: (_, i) => _Bubble(message: list[i]),
-                    ),
+              data: (items) {
+                if (items.isEmpty) {
+                  return const EmptyState(
+                    message: 'ຍັງບໍ່ມີຂໍ້ຄວາມໃນການສົນທະນານີ້',
+                    icon: Icons.chat_bubble_outline,
+                  );
+                }
+                return ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  itemCount: items.length,
+                  itemBuilder: (_, i) => _Bubble(
+                    message: items[i],
+                    onLongPress: items[i].mine && !items[i].isDeleted
+                        ? () => _confirmDelete(items[i])
+                        : null,
+                  ),
+                );
+              },
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              decoration: const BoxDecoration(
-                color: C.surface,
-                border: Border(top: BorderSide(color: C.border)),
+
+          if (conversation?.isClosed == true)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              color: C.neutralBg,
+              child: const Text(
+                'ການສົນທະນານີ້ປິດແລ້ວ — ສົ່ງຂໍ້ຄວາມໃໝ່ບໍ່ໄດ້',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.5, color: C.neutralFg),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 2000,
-                      textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: 'ພິມຂໍ້ຄວາມ...',
-                        counterText: '',
-                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _send,
-                    style: IconButton.styleFrom(backgroundColor: C.accent),
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.send_rounded, size: 20),
-                  ),
-                ],
-              ),
-            ),
-          ),
+            )
+          else
+            _Composer(controller: _input, sending: _sending, onSend: _send),
         ],
       ),
     );
@@ -224,66 +312,121 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message});
+  const _Bubble({required this.message, this.onLongPress});
 
   final ChatMessage message;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final mine = message.mine;
-    // An admin joining the thread is worth labelling — the guest and the
-    // property should know support is in the room.
-    final fromAdmin = message.senderType == 'admin';
 
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: mine
-              ? C.accent
-              : fromAdmin
-                  ? C.infoBg
-                  : C.surface,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(R.lg),
-            topRight: const Radius.circular(R.lg),
-            bottomLeft: Radius.circular(mine ? R.lg : 4),
-            bottomRight: Radius.circular(mine ? 4 : R.lg),
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: message.isDeleted
+                ? C.neutralBg
+                : mine
+                    ? C.accent
+                    : C.surface,
+            border: mine ? null : Border.all(color: C.border),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(R.lg),
+              topRight: const Radius.circular(R.lg),
+              bottomLeft: Radius.circular(mine ? R.lg : 4),
+              bottomRight: Radius.circular(mine ? 4 : R.lg),
+            ),
           ),
-          border: mine ? null : Border.all(color: C.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (fromAdmin && !mine)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'ທີມງານ LaoStay',
-                  style: TextStyle(fontSize: 10.5, color: C.infoFg, fontWeight: FontWeight.w700),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message.isDeleted ? 'ຂໍ້ຄວາມຖືກລຶບແລ້ວ' : (message.text ?? ''),
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.45,
+                  fontStyle: message.isDeleted ? FontStyle.italic : null,
+                  color: message.isDeleted
+                      ? C.neutralFg
+                      : mine
+                          ? Colors.white
+                          : C.text,
                 ),
               ),
-            Text(
-              message.body,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.45,
-                color: mine ? Colors.white : C.text,
+              const SizedBox(height: 3),
+              Text(
+                laoTime(message.createdAt),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: mine && !message.isDeleted
+                      ? Colors.white.withValues(alpha: 0.75)
+                      : C.faint,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              laoAgo(message.sentAt),
-              style: TextStyle(
-                fontSize: 10.5,
-                color: mine ? Colors.white70 : C.faint,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _Composer extends StatelessWidget {
+  const _Composer({required this.controller, required this.sending, required this.onSend});
+
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        8 + MediaQuery.of(context).viewPadding.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: C.surface,
+        border: Border(top: BorderSide(color: C.border)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 4,
+              maxLength: 4000,
+              textInputAction: TextInputAction.newline,
+              decoration: const InputDecoration(
+                hintText: 'ພິມຂໍ້ຄວາມ...',
+                counterText: '',
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            onPressed: sending ? null : onSend,
+            style: IconButton.styleFrom(backgroundColor: C.accent),
+            icon: sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.send, size: 19, color: Colors.white),
+          ),
+        ],
       ),
     );
   }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/dates.dart';
 import '../core/money.dart';
 import '../models/models.dart';
 import '../providers/auth.dart';
@@ -129,12 +128,8 @@ class DashboardScreen extends ConsumerWidget {
                 title: 'ອາທິດນີ້',
                 child: Column(
                   children: [
-                    if (d.weekStart != null)
-                      LabelledRow(
-                        label: 'ຊ່ວງ',
-                        value: laoDateRange(d.weekStart, d.weekEnd),
-                      ),
-                    MoneyRow(label: 'ຍອດຂາຍລວມ', amount: d.weekGmv),
+                    LabelledRow(label: 'ການຈອງທີ່ພັກຈົບ', value: '${d.weekBookings} ລາຍການ'),
+                    MoneyRow(label: 'ຍອດຂາຍລວມ', amount: d.weekGross),
                     MoneyRow(label: 'ຄ່າຄອມມິຊຊັນ', amount: d.weekCommission, negative: true),
                     const Divider(height: 20),
                     MoneyRow(label: 'ທ່ານໄດ້ຮັບ', amount: d.weekNet, strong: true),

@@ -8,11 +8,14 @@ import 'package:partner_app/core/api_client.dart';
 import 'package:partner_app/core/token_store.dart';
 import 'package:partner_app/providers/auth.dart';
 
-/// Answers `/auth/partner/me` and `/auth/partner/login` with a chosen status.
+/// Answers `/partner/me` and `/auth/login` with a chosen approval status.
 class _AuthAdapter implements HttpClientAdapter {
   _AuthAdapter({this.status = 'verified', this.meStatusCode = 200});
 
+  /// The `partner_status` `/partner/me` reports.
   final String status;
+
+  /// What `/partner/me` answers with — 403 when the account is not a partner.
   final int meStatusCode;
 
   @override
@@ -24,23 +27,41 @@ class _AuthAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    // `/partner/me`: the business, which is what decides the stage.
     final partner = {
       'id': '7',
+      'businessName': 'Vintage House Vientiane',
       'email': 'vintage@laostay.la',
       'ownerName': 'ນາງ ວັນນະສອນ',
-      'phone': '+856 20 5511 2233',
+      'contactPhone': '+856 20 5511 2233',
       'status': status,
+      'commissionRate': 5,
+      'walkinCommissionRate': 2.5,
+      'propertyCount': 1,
+      'bankAccounts': const <Object>[],
     };
 
-    if (options.path == '/auth/partner/me') {
+    if (options.path == '/partner/me') {
       return _json(meStatusCode == 200 ? partner : {'message': 'ບໍ່ຜ່ານ'}, meStatusCode);
     }
-    if (options.path == '/auth/partner/login') {
+    // One login endpoint for the whole platform, so the response carries the
+    // account and its role rather than a partner.
+    if (options.path == '/auth/login') {
       return _json({
         'accessToken': 'a',
         'refreshToken': 'r',
         'expiresIn': '15m',
-        'partner': partner,
+        'user': {
+          'id': '12',
+          'email': 'vintage@laostay.la',
+          'role': 'PARTNER',
+          'adminRole': null,
+          'fullName': 'ນາງ ວັນນະສອນ',
+          'phone': '+856 20 5511 2233',
+          'isVerified': true,
+          'partnerId': '7',
+          'partnerStatus': status,
+        },
       }, 200);
     }
     return _json({'ok': true}, 200);

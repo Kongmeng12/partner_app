@@ -78,14 +78,14 @@ class PayoutsScreen extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          MoneyRow(label: 'ຍອດຂາຍ', amount: payout.gmv),
+                          MoneyRow(label: 'ຍອດຂາຍ', amount: payout.gross),
                           MoneyRow(
                             label: 'ຄ່າຄອມມິຊຊັນ',
                             amount: payout.commission,
                             negative: true,
                           ),
                           const Divider(height: 18),
-                          MoneyRow(label: 'ໄດ້ຮັບ', amount: payout.netAmount, strong: true),
+                          MoneyRow(label: 'ໄດ້ຮັບ', amount: payout.net, strong: true),
                           if (payout.paidAt != null) ...[
                             const SizedBox(height: 6),
                             Align(

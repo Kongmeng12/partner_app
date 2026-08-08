@@ -79,16 +79,16 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
     }
   }
 
-  Future<void> _removePhoto(int index) async {
+  Future<void> _removePhoto(String imageId) async {
     try {
-      await ref.read(actionsProvider).deletePropertyPhoto(widget.property.id, index);
+      await ref.read(actionsProvider).deletePropertyPhoto(widget.property.id, imageId);
       if (mounted) showMessage(context, 'ລຶບຮູບແລ້ວ');
     } on ApiException catch (e) {
       if (mounted) showMessage(context, e.message, error: true);
     }
   }
 
-  Future<void> _editRoom({Room? room}) async {
+  Future<void> _editRoom({RoomType? room}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -101,7 +101,7 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
     if (saved == true && mounted) showMessage(context, 'ບັນທຶກຫ້ອງແລ້ວ');
   }
 
-  Future<void> _deleteRoom(Room room) async {
+  Future<void> _deleteRoom(RoomType room) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -123,7 +123,7 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
     if (confirmed != true) return;
 
     try {
-      final deleted = await ref.read(actionsProvider).deleteRoom(room.id);
+      final deleted = await ref.read(actionsProvider).deleteRoomType(room.id);
       if (mounted) {
         showMessage(context, deleted ? 'ລຶບຫ້ອງແລ້ວ' : 'ປິດການຂາຍຫ້ອງແລ້ວ (ມີປະຫວັດການຈອງ)');
       }
@@ -145,7 +145,7 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Photo(url: p.photos.isEmpty ? null : p.photos.first, width: 58, height: 58),
+                Photo(url: p.photos.isEmpty ? null : p.photos.first.url, width: 58, height: 58),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -157,7 +157,7 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${p.province} · ${p.rooms.length} ຫ້ອງ',
+                        '${p.location} · ${p.roomTypes.length} ປະເພດຫ້ອງ',
                         style: const TextStyle(fontSize: 12.5, color: C.muted),
                       ),
                       if (p.reviewCount > 0)
@@ -191,17 +191,17 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  for (var i = 0; i < p.photos.length; i++)
+                  for (final photo in p.photos)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: Stack(
                         children: [
-                          Photo(url: p.photos[i], width: 74, height: 74),
+                          Photo(url: photo.url, width: 74, height: 74),
                           Positioned(
                             top: 2,
                             right: 2,
                             child: InkWell(
-                              onTap: () => _removePhoto(i),
+                              onTap: () => _removePhoto(photo.id),
                               child: Container(
                                 padding: const EdgeInsets.all(3),
                                 decoration: const BoxDecoration(
@@ -249,11 +249,11 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
                 TextButton.icon(
                   onPressed: () => _editRoom(),
                   icon: const Icon(Icons.add, size: 17),
-                  label: const Text('ເພີ່ມຫ້ອງ'),
+                  label: const Text('ເພີ່ມປະເພດຫ້ອງ'),
                 ),
               ],
             ),
-            for (final room in p.rooms)
+            for (final room in p.roomTypes)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Row(
@@ -280,7 +280,7 @@ class _PropertyCardState extends ConsumerState<_PropertyCard> {
                   ],
                 ),
                 subtitle: Text(
-                  '${kip(room.basePrice)} · ${room.capacity} ຄົນ · ${room.qty} ຫ້ອງ'
+                  '${kip(room.basePrice)} · ${room.maxOccupancy} ຄົນ · ${room.totalRooms} ຫ້ອງ'
                   '${room.hasAc ? ' · ແອ' : ''}',
                   style: const TextStyle(fontSize: 12, color: C.muted),
                 ),
@@ -307,7 +307,7 @@ class _RoomSheet extends ConsumerStatefulWidget {
   const _RoomSheet({required this.propertyId, this.room});
 
   final String propertyId;
-  final Room? room;
+  final RoomType? room;
 
   @override
   ConsumerState<_RoomSheet> createState() => _RoomSheetState();
@@ -316,31 +316,31 @@ class _RoomSheet extends ConsumerStatefulWidget {
 class _RoomSheetState extends ConsumerState<_RoomSheet> {
   final _form = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.room?.name ?? '');
-  late final _roomNo = TextEditingController(text: widget.room?.roomNo ?? '');
   late final _price = TextEditingController(text: widget.room?.basePrice.toString() ?? '');
-  late final _capacity = TextEditingController(text: widget.room?.capacity.toString() ?? '2');
-  late final _qty = TextEditingController(text: widget.room?.qty.toString() ?? '1');
+  late final _capacity =
+      TextEditingController(text: widget.room?.maxOccupancy.toString() ?? '2');
+  late final _qty = TextEditingController(text: widget.room?.totalRooms.toString() ?? '1');
+  late final _minNights = TextEditingController(text: widget.room?.minNights.toString() ?? '1');
 
   late String _bedType = widget.room?.bedType ?? 'double';
   late bool _hasAc = widget.room?.hasAc ?? true;
   late bool _isActive = widget.room?.isActive ?? true;
   bool _busy = false;
 
-  /// Must match `BED_TYPES` in the backend's `common/money.ts`.
+  /// Must match the `bed_type` enum exactly — anything else is a 400.
   static const _bedTypes = {
     'single': 'ຕຽງດ່ຽວ',
     'double': 'ຕຽງຄູ່',
     'twin': 'ສອງຕຽງ',
-    'king': 'ຕຽງໃຫຍ່',
   };
 
   @override
   void dispose() {
     _name.dispose();
-    _roomNo.dispose();
     _price.dispose();
     _capacity.dispose();
     _qty.dispose();
+    _minNights.dispose();
     super.dispose();
   }
 
@@ -350,19 +350,19 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
 
     final body = <String, dynamic>{
       'name': _name.text.trim(),
-      'roomNo': _roomNo.text.trim(),
       'hasAc': _hasAc,
       'bedType': _bedType,
       'basePrice': int.parse(_price.text.replaceAll(RegExp(r'[^0-9]'), '')),
-      'capacity': int.parse(_capacity.text),
-      'qty': int.parse(_qty.text),
+      'maxOccupancy': int.parse(_capacity.text),
+      'totalRooms': int.parse(_qty.text),
+      'minNights': int.parse(_minNights.text),
       // Only an update may toggle activity; the create DTO rejects the field.
       if (widget.room != null) 'isActive': _isActive,
     };
 
     try {
-      await ref.read(actionsProvider).saveRoom(
-            roomId: widget.room?.id,
+      await ref.read(actionsProvider).saveRoomType(
+            roomTypeId: widget.room?.id,
             propertyId: widget.propertyId,
             body: body,
           );
@@ -386,19 +386,17 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                widget.room == null ? 'ເພີ່ມຫ້ອງ' : 'ແກ້ໄຂຫ້ອງ',
+                widget.room == null ? 'ເພີ່ມປະເພດຫ້ອງ' : 'ແກ້ໄຂປະເພດຫ້ອງ',
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _name,
-                decoration: const InputDecoration(labelText: 'ຊື່ຫ້ອງ'),
+                decoration: const InputDecoration(
+                  labelText: 'ຊື່ປະເພດຫ້ອງ',
+                  helperText: 'ເຊັ່ນ: Standard AC, Deluxe',
+                ),
                 validator: (v) => (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່ຫ້ອງ' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _roomNo,
-                decoration: const InputDecoration(labelText: 'ເລກຫ້ອງ (ບໍ່ບັງຄັບ)'),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -437,12 +435,26 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
                       ),
                       validator: (v) {
                         final n = int.tryParse(v ?? '');
-                        if (n == null || n < 1 || n > 200) return '1–200';
+                        if (n == null || n < 1 || n > 500) return '1–500';
                         return null;
                       },
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _minNights,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'ພັກຢ່າງໜ້ອຍ (ຄືນ)',
+                  helperText: 'ຈອງໜ້ອຍກວ່ານີ້ບໍ່ໄດ້',
+                ),
+                validator: (v) {
+                  final n = int.tryParse(v ?? '');
+                  if (n == null || n < 1 || n > 30) return '1–30';
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
