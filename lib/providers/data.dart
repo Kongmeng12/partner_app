@@ -27,6 +27,26 @@ final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((ref) asy
   return PartnerDashboard(Map<String, dynamic>.from(data as Map));
 });
 
+// ── locations ───────────────────────────────────────────────────────────────
+
+/// Provinces and districts for the sign-up form.
+///
+/// Both endpoints are public, which matters: this runs before the applicant
+/// has an account, so there is no token to send.
+final provincesProvider = FutureProvider<List<Province>>((ref) async {
+  final data = await ref.watch(apiClientProvider).get<dynamic>('/locations/provinces');
+  return mapListOf(data).map(Province.fromJson).toList()
+    ..sort((a, b) => a.name.compareTo(b.name));
+});
+
+final districtsProvider = FutureProvider.family<List<District>, String>((ref, provinceId) async {
+  if (provinceId.isEmpty) return const [];
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/locations/districts', query: {'provinceId': provinceId});
+  return mapListOf(data).map(District.fromJson).toList();
+});
+
 // ── properties and room types ───────────────────────────────────────────────
 
 final propertiesProvider = FutureProvider<List<Property>>((ref) async {

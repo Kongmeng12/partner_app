@@ -55,6 +55,39 @@ class PhotoRef {
 
 List<PhotoRef> _photos(Object? v) => _mapList(v).map(PhotoRef.fromJson).toList();
 
+/// A province, from the public `/locations/provinces`.
+///
+/// Needed before an applicant has an account: the sign-up form has to send a
+/// `provinceId`, and a typed province name is not one.
+class Province {
+  Province({required this.id, required this.name, required this.nameEn});
+
+  final String id;
+  final String name;
+  final String nameEn;
+
+  factory Province.fromJson(Map<String, dynamic> j) => Province(
+        id: _str(j['id']),
+        name: _str(j['name']),
+        nameEn: _str(j['nameEn']),
+      );
+}
+
+/// A district within a province, from `/locations/districts?provinceId=`.
+class District {
+  District({required this.id, required this.provinceId, required this.name});
+
+  final String id;
+  final String provinceId;
+  final String name;
+
+  factory District.fromJson(Map<String, dynamic> j) => District(
+        id: _str(j['id']),
+        provinceId: _str(j['provinceId']),
+        name: _str(j['name']),
+      );
+}
+
 /// A bank account, as `/partner/me` returns it — the number always masked.
 class BankAccount {
   BankAccount({

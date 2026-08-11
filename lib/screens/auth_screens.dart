@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth.dart';
+import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 
@@ -159,8 +160,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       'password',
       'ownerName',
       'phone',
+      'businessName',
       'propertyName',
-      'province',
       'address',
       'bankName',
       'bankAccount',
@@ -168,17 +169,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       key: TextEditingController(),
   };
   String _propertyType = 'guesthouse';
+
+  /// The API wants ids, not names. A typed province cannot be matched to a row,
+  /// which is what used to make every application fail validation.
+  String _provinceId = '';
+  String _districtId = '';
   bool _busy = false;
 
-  /// Must match `PROPERTY_TYPES` in the backend's `common/money.ts`, which the
-  /// registration DTO validates against.
+  /// The four values of the `property_type` enum. Anything else is rejected by
+  /// the registration DTO — this list used to carry `hotel` and `apartment`,
+  /// which the database has never had.
   static const _types = {
     'homestay': 'ໂຮມສະເຕ',
     'guesthouse': 'ເຮືອນພັກ',
-    'hotel': 'ໂຮງແຮມ',
     'resort': 'ຣີສອດ',
     'villa': 'ວິນລ່າ',
-    'apartment': 'ອາພາດເມັ້ນ',
   };
 
   @override
@@ -193,22 +198,38 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!_form.currentState!.validate()) return;
     setState(() => _busy = true);
 
+    // Exactly the keys RegisterPartnerDto declares. The API runs with
+    // `forbidNonWhitelisted`, so one extra key rejects the whole application —
+    // the bank details go in their own call once the account exists.
     final body = <String, dynamic>{
       'email': _fields['email']!.text.trim(),
       'password': _fields['password']!.text,
       'ownerName': _fields['ownerName']!.text.trim(),
       'phone': _fields['phone']!.text.trim(),
+      'businessName': _fields['businessName']!.text.trim(),
       'propertyName': _fields['propertyName']!.text.trim(),
       'propertyType': _propertyType,
-      'province': _fields['province']!.text.trim(),
+      'provinceId': int.parse(_provinceId),
+      if (_districtId.isNotEmpty) 'districtId': int.parse(_districtId),
       'address': _fields['address']!.text.trim(),
-      if (_fields['bankName']!.text.trim().isNotEmpty)
-        'bankName': _fields['bankName']!.text.trim(),
-      if (_fields['bankAccount']!.text.trim().isNotEmpty)
-        'bankAccount': _fields['bankAccount']!.text.trim(),
     };
 
     final ok = await ref.read(authProvider.notifier).register(body);
+
+    // Best effort, and deliberately after the account exists: a bank account
+    // that fails to save is something the partner can add from their profile,
+    // not a reason to lose the application they just filled in.
+    if (ok && _fields['bankName']!.text.trim().isNotEmpty) {
+      try {
+        await ref.read(actionsProvider).addBankAccount({
+          'bankName': _fields['bankName']!.text.trim(),
+          'accountName': _fields['ownerName']!.text.trim(),
+          'accountNumber': _fields['bankAccount']!.text.trim(),
+        });
+      } catch (_) {
+        // Added later from the profile screen.
+      }
+    }
 
     if (!mounted) return;
     setState(() => _busy = false);
@@ -252,6 +273,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         _text('ownerName', 'ຊື່ເຈົ້າຂອງ', minLength: 2),
                         _text('phone', 'ເບີໂທ',
                             keyboard: TextInputType.phone, minLength: 6),
+                        _text('businessName', 'ຊື່ທຸລະກິດ', minLength: 2),
                       ],
                     ),
                   ),
@@ -273,7 +295,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             onChanged: (v) => setState(() => _propertyType = v ?? 'guesthouse'),
                           ),
                         ),
-                        _text('province', 'ແຂວງ', minLength: 2),
+                        _provincePicker(),
+                        _districtPicker(),
                         _text('address', 'ທີ່ຢູ່', minLength: 4, lines: 2),
                       ],
                     ),
@@ -310,6 +333,71 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The province list, from the public endpoint.
+  ///
+  /// A dropdown rather than a text box because the API takes an id: "ວຽງຈັນ"
+  /// typed by hand matches no row, and the application is rejected.
+  Widget _provincePicker() {
+    final provinces = ref.watch(provincesProvider);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: provinces.when(
+        loading: () => const InputDecorator(
+          decoration: InputDecoration(labelText: 'ແຂວງ'),
+          child: Text('ກຳລັງໂຫຼດ...', style: TextStyle(color: C.muted)),
+        ),
+        error: (e, _) => InputDecorator(
+          decoration: const InputDecoration(labelText: 'ແຂວງ'),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text('ໂຫຼດລາຍຊື່ແຂວງບໍ່ໄດ້', style: TextStyle(color: C.dangerFg)),
+              ),
+              TextButton(
+                onPressed: () => ref.invalidate(provincesProvider),
+                child: const Text('ລອງໃໝ່'),
+              ),
+            ],
+          ),
+        ),
+        data: (list) => DropdownButtonFormField<String>(
+          value: _provinceId.isEmpty ? null : _provinceId,
+          decoration: const InputDecoration(labelText: 'ແຂວງ'),
+          items: [
+            for (final p in list) DropdownMenuItem(value: p.id, child: Text(p.name)),
+          ],
+          validator: (v) => (v == null || v.isEmpty) ? 'ເລືອກແຂວງ' : null,
+          onChanged: (v) => setState(() {
+            _provinceId = v ?? '';
+            // The old district belongs to the old province.
+            _districtId = '';
+          }),
+        ),
+      ),
+    );
+  }
+
+  /// Optional, and only once a province is chosen — districts are listed per
+  /// province, so there is nothing to show before then.
+  Widget _districtPicker() {
+    if (_provinceId.isEmpty) return const SizedBox.shrink();
+    final districts = ref.watch(districtsProvider(_provinceId));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: districts.maybeWhen(
+        data: (list) => DropdownButtonFormField<String>(
+          value: _districtId.isEmpty ? null : _districtId,
+          decoration: const InputDecoration(labelText: 'ເມືອງ (ບໍ່ບັງຄັບ)'),
+          items: [
+            for (final d in list) DropdownMenuItem(value: d.id, child: Text(d.name)),
+          ],
+          onChanged: (v) => setState(() => _districtId = v ?? ''),
+        ),
+        orElse: () => const SizedBox.shrink(),
       ),
     );
   }
