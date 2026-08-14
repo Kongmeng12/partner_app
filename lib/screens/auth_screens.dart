@@ -175,6 +175,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   String _provinceId = '';
   String _districtId = '';
   bool _busy = false;
+  bool _acceptedTerms = false;
 
   /// The four values of the `property_type` enum. Anything else is rejected by
   /// the registration DTO — this list used to carry `hotel` and `apartment`,
@@ -212,6 +213,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       'provinceId': int.parse(_provinceId),
       if (_districtId.isNotEmpty) 'districtId': int.parse(_districtId),
       'address': _fields['address']!.text.trim(),
+      // Required by the API, and required to be true. The server records which
+      // version of each document was live when this was ticked.
+      'acceptedTerms': _acceptedTerms,
     };
 
     final ok = await ref.read(authProvider.notifier).register(body);
@@ -311,9 +315,25 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
+                  // An explicit tick. The API refuses the application without
+                  // it, so the button stays disabled rather than letting the
+                  // partner fill in the whole form and be rejected at the end.
+                  CheckboxListTile(
+                    value: _acceptedTerms,
+                    onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
+                      'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ຂໍ້ຕົກລົງ Partner',
+                      style: TextStyle(fontSize: 12.5, height: 1.45),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   FilledButton(
-                    onPressed: _busy ? null : _submit,
+                    onPressed: (_busy || !_acceptedTerms) ? null : _submit,
                     child: _busy
                         ? const SizedBox(
                             width: 20,
