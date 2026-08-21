@@ -23,7 +23,7 @@ class DashboardScreen extends ConsumerWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(partner?.ownerName ?? 'LaoStay Partner'),
+            Text(partner?.ownerName ?? 'PhaPhak Partner'),
             const Text(
               'ພາບລວມມື້ນີ້',
               style: TextStyle(fontSize: 12, color: C.muted, fontWeight: FontWeight.w500),

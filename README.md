@@ -1,4 +1,4 @@
-# LaoStay Partner app
+# PhaPhak Partner app
 
 Flutter app ສຳລັບເຈົ້າຂອງທີ່ພັກ — ກິນ API `/api/partner/*` ຂອງ backend ໃນ `kong/backend`.
 

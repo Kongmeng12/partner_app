@@ -77,7 +77,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: 20),
                     const Text(
-                      'LaoStay Partner',
+                      'PhaPhak Partner',
                       style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
@@ -344,7 +344,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'ໃບສະໝັກຈະຖືກກວດສອບໂດຍທີມງານ LaoStay ກ່ອນເປີດຮັບການຈອງ',
+                    'ໃບສະໝັກຈະຖືກກວດສອບໂດຍທີມງານ PhaPhak ກ່ອນເປີດຮັບການຈອງ',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: C.muted, fontSize: 12.5),
                   ),
@@ -491,7 +491,7 @@ class PendingApprovalScreen extends ConsumerWidget {
                   const SizedBox(height: 10),
                   Text(
                     'ສະບາຍດີ ${partner?.ownerName ?? ''}\n'
-                    'ທີມງານ LaoStay ກຳລັງກວດສອບໃບສະໝັກຂອງທ່ານ. '
+                    'ທີມງານ PhaPhak ກຳລັງກວດສອບໃບສະໝັກຂອງທ່ານ. '
                     'ເມື່ອຜ່ານແລ້ວ ທ່ານຈະຕັ້ງລາຄາ ແລະ ຮັບການຈອງໄດ້ທັນທີ.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: C.soft, fontSize: 14, height: 1.6),

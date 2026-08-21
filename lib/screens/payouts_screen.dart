@@ -104,7 +104,7 @@ class PayoutsScreen extends ConsumerWidget {
                 ],
               const SizedBox(height: 8),
               const Text(
-                'ການໂອນດຳເນີນການໂດຍທີມການເງິນ LaoStay ທຸກອາທິດ',
+                'ການໂອນດຳເນີນການໂດຍທີມການເງິນ PhaPhak ທຸກອາທິດ',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: C.faint),
               ),
