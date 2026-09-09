@@ -83,11 +83,23 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   /// A partner cannot start one — only a guest can — so if the guest has never
   /// written, there is nothing to open and saying so is better than dropping
   /// them into an empty screen with no way to begin.
+  ///
+  /// A conversation belongs to the property, not to a single booking (see
+  /// [Conversation]): a guest who books twice keeps one thread, tagged with
+  /// whichever booking it started against. So an exact `bookingId` match can
+  /// miss a thread that plainly belongs to this guest — fall back to matching
+  /// by guest id + property id (not by name, which two guests can share)
+  /// before concluding there is truly nothing to open.
   Future<void> _openChat(BuildContext context) async {
     final conversations = await ref.read(conversationsProvider.future);
+    final detail = await ref.read(bookingDetailProvider(widget.bookingId).future);
+
     final thread = conversations.items
-        .where((c) => c.bookingId == widget.bookingId)
-        .firstOrNull;
+            .where((c) => c.bookingId == widget.bookingId)
+            .firstOrNull ??
+        conversations.items
+            .where((c) => c.customerId == detail.guestId && c.propertyId == detail.propertyId)
+            .firstOrNull;
 
     if (!context.mounted) return;
     if (thread == null) {
@@ -184,6 +196,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                         ? '${b.roomTypeName} × ${b.roomQuantity}'
                         : b.roomTypeName,
                   ),
+                  if (b.roomNumbers.isNotEmpty)
+                    LabelledRow(
+                      label: 'ເລກຫ້ອງ',
+                      value: b.roomNumbers.join(', '),
+                    ),
                   LabelledRow(label: 'ເຂົ້າພັກ', value: laoDate(b.checkIn), strong: true),
                   LabelledRow(label: 'ອອກ', value: laoDate(b.checkOut), strong: true),
                   LabelledRow(label: 'ຈຳນວນຄືນ', value: '${b.nights} ຄືນ'),

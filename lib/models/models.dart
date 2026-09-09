@@ -426,6 +426,7 @@ class BookingDetail {
 
   Map<String, dynamic> get _guest =>
       Map<String, dynamic>.from(raw['guest'] as Map? ?? const {});
+  String get guestId => _str(_guest['id']);
   String get guestName => _str(_guest['name'], '—');
   String get guestPhone => _str(_guest['phone']);
   String get guestEmail => _str(_guest['email']);
@@ -435,9 +436,13 @@ class BookingDetail {
   String get roomTypeName => _str(_roomType?['name'], '—');
   int get roomQuantity => _int(_roomType?['quantity'], 1);
   int get pricePerNight => _int(_roomType?['pricePerNight']);
+  List<String> get roomNumbers =>
+      (_roomType?['roomNumbers'] as List?)?.map((e) => e.toString()).toList() ??
+      const [];
 
   Map<String, dynamic> get _property =>
       Map<String, dynamic>.from(raw['property'] as Map? ?? const {});
+  String get propertyId => _str(_property['id']);
   String get propertyName => _str(_property['name']);
 
   List<Map<String, dynamic>> get payments => _mapList(raw['payments']);
@@ -678,6 +683,7 @@ class Conversation {
     required this.counterpartName,
     required this.status,
     required this.unread,
+    this.customerId,
     this.bookingId,
     this.bookingCode,
     this.lastMessage,
@@ -688,6 +694,11 @@ class Conversation {
   final String id;
   final String propertyId;
   final String property;
+
+  /// The guest's user id. Only set on the partner side — it is how a booking's
+  /// `guest.id` is matched to its thread instead of guessing from names, which
+  /// two guests can share.
+  final String? customerId;
 
   /// Whichever side we are not — the guest, from this app.
   final String counterpartName;
@@ -710,6 +721,7 @@ class Conversation {
         counterpartName: _str(j['counterpartName']),
         status: _str(j['status'], 'open'),
         unread: _int(j['unread']),
+        customerId: _strOrNull(j['customerId']),
         bookingId: _strOrNull(j['bookingId']),
         bookingCode: _strOrNull(j['bookingCode']),
         lastMessage: _strOrNull(j['lastMessage']),

@@ -31,7 +31,7 @@ android {
         // 5.0/5.1 are well under 1% of devices. Raising it here rather than
         // forcing the library through with tools:overrideLibrary, which would
         // only move the failure to runtime.
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
