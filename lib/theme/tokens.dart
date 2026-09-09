@@ -107,6 +107,14 @@ const availabilityPill = <String, Pill>{
   'closed': Pill(C.neutralBg, C.neutralFg, 'ປິດຂາຍ'),
 };
 
+/// `rooms.status` — one numbered physical room under a room type, distinct
+/// from `room_availability.status` above which is a per-night count.
+const roomUnitStatusPill = <String, Pill>{
+  'available': Pill(C.successBg, C.successFg, 'ພ້ອມໃຊ້'),
+  'maintenance': Pill(C.warnBg, C.warnFg, 'ບຳລຸງຮັກສາ'),
+  'inactive': Pill(C.neutralBg, C.neutralFg, 'ປິດໃຊ້ງານ'),
+};
+
 const fontFamily = 'NotoSansLao';
 
 ThemeData buildTheme() {

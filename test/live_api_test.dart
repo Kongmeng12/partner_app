@@ -172,6 +172,15 @@ void main() {
         expect(rt.basePrice, greaterThan(0));
         expect(rt.totalRooms, greaterThan(0));
         expect(rt.maxOccupancy, greaterThan(0));
+        // Numbered rooms are optional and independent of totalRooms — a room
+        // type need not have any — but every one that comes back must carry a
+        // real id, number and a known status. A renamed field would otherwise
+        // parse silently into an empty string rather than fail loudly here.
+        for (final room in rt.rooms) {
+          expect(room.id, isNotEmpty);
+          expect(room.roomNumber, isNotEmpty);
+          expect(['available', 'maintenance', 'inactive'], contains(room.status));
+        }
       }
     }
   });

@@ -10,6 +10,10 @@
 /// what arrives is a plain number of kip. No doubles, no minor unit.
 library;
 
+import 'room_unit.dart';
+
+export 'room_unit.dart';
+
 /// Reads a value the API may send as a number or a numeric string.
 int _int(Object? v, [int fallback = 0]) {
   if (v is int) return v;
@@ -177,12 +181,19 @@ class Partner {
       );
 }
 
-/// A category of room, not a single room.
+/// A category of room, not a single room — "Standard AC", priced once, with
+/// `totalRooms` of them. Availability is therefore a count per night rather
+/// than a booked/free flag, which is what makes it possible to sell the last
+/// of eight identical rooms without tracking which one.
 ///
-/// v1 modelled each physical room with its own number; v2 models the type —
-/// "Standard AC" — with `totalRooms` of them. Availability is therefore a count
-/// per night rather than a booked/free flag, which is what makes it possible to
-/// sell the last of eight identical rooms without tracking which one.
+/// A room type can also carry individually-numbered [rooms] — "204", "206" —
+/// for housekeeping and maintenance tracking underneath that count.
+/// `totalRooms` stays the nightly ceiling regardless of how many numbered
+/// rooms exist or what their statuses are; a partner is never required to
+/// number every room. The one place numbering reaches a guest is when
+/// [allowRoomSelection] is on, letting them pick a specific number at booking
+/// time instead of just a type. Off by default, so nothing changes for a room
+/// type until a partner opts it in.
 class RoomType {
   RoomType({
     required this.id,
@@ -199,6 +210,8 @@ class RoomType {
     this.sizeSqm,
     this.extraGuestFee = 0,
     this.photos = const [],
+    this.allowRoomSelection = false,
+    this.rooms = const [],
   });
 
   final String id;
@@ -218,6 +231,13 @@ class RoomType {
   final bool isActive;
   final List<PhotoRef> photos;
 
+  /// Lets a guest pick a specific numbered room at booking time instead of
+  /// just this type. Independent of how many [rooms] are actually numbered.
+  final bool allowRoomSelection;
+
+  /// This type's individually-numbered physical rooms, if any.
+  final List<RoomUnit> rooms;
+
   String get label => '$name × $totalRooms';
 
   factory RoomType.fromJson(Map<String, dynamic> j) => RoomType(
@@ -235,6 +255,8 @@ class RoomType {
         sizeSqm: _intOrNull(j['sizeSqm']),
         isActive: _bool(j['isActive'], true),
         photos: _photos(j['images']),
+        allowRoomSelection: _bool(j['allowRoomSelection']),
+        rooms: roomUnitsOf(j['rooms']),
       );
 }
 

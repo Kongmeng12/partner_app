@@ -468,6 +468,53 @@ class PartnerActions {
     return j['deleted'] == true;
   }
 
+  /// Adds one numbered room under a room type. The API 400s if `roomNumber` is
+  /// already taken within that type — the caller shows the API's own message.
+  Future<RoomUnit> createRoom(String roomTypeId, String roomNumber, {String? floor}) async {
+    final data = await _api.post<dynamic>(
+      '/partner/room-types/$roomTypeId/rooms',
+      body: {
+        'roomNumber': roomNumber,
+        if (floor != null && floor.isNotEmpty) 'floor': floor,
+      },
+    );
+    ref.invalidate(propertiesProvider);
+    return RoomUnit.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// `status` is `available` · `maintenance` · `inactive` — `maintenance` is
+  /// how a partner pulls this one room off sale without touching the room
+  /// type's aggregate count. Every field is optional so the caller sends only
+  /// what changed.
+  Future<RoomUnit> updateRoom(
+    String roomId, {
+    String? roomNumber,
+    String? floor,
+    String? status,
+  }) async {
+    final data = await _api.patch<dynamic>(
+      '/partner/rooms/$roomId',
+      body: {
+        if (roomNumber != null) 'roomNumber': roomNumber,
+        if (floor != null) 'floor': floor,
+        if (status != null) 'status': status,
+      },
+    );
+    ref.invalidate(propertiesProvider);
+    return RoomUnit.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// Same deactivate-instead-of-delete shape as [deleteRoomType]: a room with
+  /// booking history comes back `deactivated: true` rather than gone, and that
+  /// counts as success. Either way the refreshed property list already shows
+  /// the resulting state, so the caller only needs this for the message.
+  Future<bool> deleteRoom(String roomId) async {
+    final data = await _api.delete<dynamic>('/partner/rooms/$roomId');
+    ref.invalidate(propertiesProvider);
+    final j = Map<String, dynamic>.from(data as Map);
+    return j['deleted'] == true;
+  }
+
   Future<void> updateProperty(String propertyId, Map<String, dynamic> body) async {
     await _api.patch<dynamic>('/partner/properties/$propertyId', body: body);
     ref.invalidate(propertiesProvider);

@@ -325,6 +325,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
   late String _bedType = widget.room?.bedType ?? 'double';
   late bool _hasAc = widget.room?.hasAc ?? true;
   late bool _isActive = widget.room?.isActive ?? true;
+  late bool _allowRoomSelection = widget.room?.allowRoomSelection ?? false;
   bool _busy = false;
 
   /// Must match the `bed_type` enum exactly — anything else is a 400.
@@ -358,6 +359,8 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
       'minNights': int.parse(_minNights.text),
       // Only an update may toggle activity; the create DTO rejects the field.
       if (widget.room != null) 'isActive': _isActive,
+      // Unlike isActive, the create endpoint accepts this one too.
+      'allowRoomSelection': _allowRoomSelection,
     };
 
     try {
@@ -374,8 +377,30 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
     }
   }
 
+  Future<void> _manageRooms(RoomType room) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: C.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(R.xl)),
+      ),
+      builder: (_) => _RoomUnitsSheet(
+        roomTypeId: room.id,
+        roomTypeName: room.name,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Re-resolved from the live property list rather than the `widget.room`
+    // snapshot, so the room count on the button below stays right after the
+    // partner adds or removes numbered rooms in the sheet it opens.
+    final liveRoom = widget.room == null
+        ? null
+        : _roomTypeById(ref.watch(propertiesProvider).value, widget.room!.id) ?? widget.room;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
       child: SingleChildScrollView(
@@ -458,7 +483,7 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _bedType,
+                initialValue: _bedType,
                 decoration: const InputDecoration(labelText: 'ປະເພດຕຽງ'),
                 items: [
                   for (final e in _bedTypes.entries)
@@ -471,7 +496,18 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
                 value: _hasAc,
                 onChanged: (v) => setState(() => _hasAc = v),
                 title: const Text('ມີແອ', style: TextStyle(fontSize: 14)),
-                activeColor: C.accent,
+                activeThumbColor: C.accent,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _allowRoomSelection,
+                onChanged: (v) => setState(() => _allowRoomSelection = v),
+                title: const Text('ໃຫ້ແຂກເລືອກເລກຫ້ອງ', style: TextStyle(fontSize: 14)),
+                subtitle: const Text(
+                  'ແຂກສາມາດເລືອກຫ້ອງທີ່ຕ້ອງການຕອນຈອງ',
+                  style: TextStyle(fontSize: 12),
+                ),
+                activeThumbColor: C.accent,
               ),
               if (widget.room != null)
                 SwitchListTile(
@@ -479,8 +515,306 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
                   value: _isActive,
                   onChanged: (v) => setState(() => _isActive = v),
                   title: const Text('ເປີດຂາຍ', style: TextStyle(fontSize: 14)),
-                  activeColor: C.accent,
+                  activeThumbColor: C.accent,
                 ),
+              if (liveRoom != null) ...[
+                const SizedBox(height: 4),
+                OutlinedButton.icon(
+                  onPressed: () => _manageRooms(liveRoom),
+                  icon: const Icon(Icons.meeting_room_outlined, size: 18),
+                  label: Text(
+                    liveRoom.rooms.isEmpty
+                        ? 'ຈັດການເລກຫ້ອງ'
+                        : 'ຈັດການເລກຫ້ອງ (${liveRoom.rooms.length})',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: _busy ? null : _save,
+                child: _busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('ບັນທຶກ'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Finds one room type by id across every property, so a sheet that only
+/// knows the id can always show the freshest copy from [propertiesProvider]
+/// rather than the possibly-stale snapshot it was opened with.
+RoomType? _roomTypeById(List<Property>? properties, String roomTypeId) {
+  if (properties == null) return null;
+  for (final p in properties) {
+    for (final rt in p.roomTypes) {
+      if (rt.id == roomTypeId) return rt;
+    }
+  }
+  return null;
+}
+
+/// Lists a room type's individually-numbered rooms — add, edit, retire or
+/// delete. Opened from `_RoomSheet` once a room type exists, since a room
+/// cannot be created before its room type has an id.
+class _RoomUnitsSheet extends ConsumerWidget {
+  const _RoomUnitsSheet({required this.roomTypeId, required this.roomTypeName});
+
+  final String roomTypeId;
+  final String roomTypeName;
+
+  Future<void> _addOrEdit(BuildContext context, WidgetRef ref, {RoomUnit? room}) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: C.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(R.xl)),
+      ),
+      builder: (_) => _RoomUnitSheet(roomTypeId: roomTypeId, room: room),
+    );
+    if (saved == true && context.mounted) showMessage(context, 'ບັນທຶກເລກຫ້ອງແລ້ວ');
+  }
+
+  Future<void> _setStatus(BuildContext context, WidgetRef ref, RoomUnit room, String status) async {
+    try {
+      await ref.read(actionsProvider).updateRoom(room.id, status: status);
+      if (context.mounted) {
+        showMessage(context, status == 'maintenance' ? 'ປິດຊົ່ວຄາວແລ້ວ' : 'ເປີດໃຊ້ຄືນແລ້ວ');
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) showMessage(context, e.message, error: true);
+    }
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref, RoomUnit room) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ລຶບຫ້ອງ "${room.roomNumber}"?'),
+        content: const Text(
+          'ຖ້າຫ້ອງນີ້ເຄີຍມີການຈອງ ລະບົບຈະປິດໃຊ້ງານແທນການລຶບ '
+          'ເພື່ອຮັກສາປະຫວັດການຈອງໄວ້',
+        ),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('ຍົກເລີກ')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: C.dangerFg),
+            onPressed: () => ctx.pop(true),
+            child: const Text('ຢືນຢັນ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final deleted = await ref.read(actionsProvider).deleteRoom(room.id);
+      if (context.mounted) {
+        showMessage(context, deleted ? 'ລຶບຫ້ອງແລ້ວ' : 'ປິດໃຊ້ງານຫ້ອງແລ້ວ (ມີປະຫວັດການຈອງ)');
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) showMessage(context, e.message, error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final properties = ref.watch(propertiesProvider).value;
+    final roomType = _roomTypeById(properties, roomTypeId);
+    final rooms = roomType?.rooms ?? const <RoomUnit>[];
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'ເລກຫ້ອງ · $roomTypeName',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => _addOrEdit(context, ref),
+                  icon: const Icon(Icons.add, size: 17),
+                  label: const Text('ເພີ່ມ'),
+                ),
+              ],
+            ),
+            if (rooms.isEmpty)
+              const EmptyState(
+                message: 'ຍັງບໍ່ມີການລະບຸເລກຫ້ອງ',
+                icon: Icons.meeting_room_outlined,
+              )
+            else
+              for (final room in rooms)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    room.roomNumber,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: room.isInactive ? C.faint : C.text,
+                    ),
+                  ),
+                  subtitle: (room.floor == null || room.floor!.isEmpty)
+                      ? null
+                      : Text('ຊັ້ນ ${room.floor}', style: const TextStyle(fontSize: 12, color: C.muted)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      StatusPill(map: roomUnitStatusPill, status: room.status, compact: true),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 20, color: C.faint),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'edit':
+                              _addOrEdit(context, ref, room: room);
+                            case 'maintenance':
+                              _setStatus(context, ref, room, 'maintenance');
+                            case 'available':
+                              _setStatus(context, ref, room, 'available');
+                            case 'delete':
+                              _delete(context, ref, room);
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'edit', child: Text('ແກ້ໄຂ')),
+                          if (room.isAvailable)
+                            const PopupMenuItem(
+                              value: 'maintenance',
+                              child: Text('ປິດຊົ່ວຄາວ (ບຳລຸງຮັກສາ)'),
+                            )
+                          else if (room.isMaintenance)
+                            const PopupMenuItem(value: 'available', child: Text('ເປີດໃຊ້ຄືນ')),
+                          const PopupMenuItem(value: 'delete', child: Text('ລຶບ')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Create/edit form for one numbered room. Status is only shown when editing —
+/// like `_RoomSheet`'s `isActive`, the create endpoint does not accept it and
+/// a fresh room always starts `available` server-side.
+class _RoomUnitSheet extends ConsumerStatefulWidget {
+  const _RoomUnitSheet({required this.roomTypeId, this.room});
+
+  final String roomTypeId;
+  final RoomUnit? room;
+
+  @override
+  ConsumerState<_RoomUnitSheet> createState() => _RoomUnitSheetState();
+}
+
+class _RoomUnitSheetState extends ConsumerState<_RoomUnitSheet> {
+  final _form = GlobalKey<FormState>();
+  late final _roomNumber = TextEditingController(text: widget.room?.roomNumber ?? '');
+  late final _floor = TextEditingController(text: widget.room?.floor ?? '');
+  late String _status = widget.room?.status ?? 'available';
+  bool _busy = false;
+
+  /// Must match the `room_status` enum exactly — anything else is a 400.
+  static const _statuses = {
+    'available': 'ພ້ອມໃຊ້',
+    'maintenance': 'ບຳລຸງຮັກສາ',
+    'inactive': 'ປິດໃຊ້ງານ',
+  };
+
+  @override
+  void dispose() {
+    _roomNumber.dispose();
+    _floor.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() => _busy = true);
+
+    try {
+      final actions = ref.read(actionsProvider);
+      final number = _roomNumber.text.trim();
+      final floor = _floor.text.trim();
+      if (widget.room == null) {
+        await actions.createRoom(widget.roomTypeId, number, floor: floor.isEmpty ? null : floor);
+      } else {
+        await actions.updateRoom(
+          widget.room!.id,
+          roomNumber: number,
+          floor: floor,
+          status: _status,
+        );
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.room == null ? 'ເພີ່ມເລກຫ້ອງ' : 'ແກ້ໄຂເລກຫ້ອງ',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _roomNumber,
+                decoration: const InputDecoration(
+                  labelText: 'ເລກຫ້ອງ',
+                  helperText: 'ເຊັ່ນ: 204, 206',
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'ໃສ່ເລກຫ້ອງ' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _floor,
+                decoration: const InputDecoration(labelText: 'ຊັ້ນ (ຖ້າມີ)'),
+              ),
+              if (widget.room != null) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _status,
+                  decoration: const InputDecoration(labelText: 'ສະຖານະ'),
+                  items: [
+                    for (final e in _statuses.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setState(() => _status = v ?? 'available'),
+                ),
+              ],
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _busy ? null : _save,

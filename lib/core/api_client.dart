@@ -184,7 +184,7 @@ class ApiClient {
     final data = await _send<dynamic>(
       'POST',
       '/auth/login',
-      body: {'email': email, 'password': password},
+      body: {'identifier': email, 'password': password},
       anonymous: true,
     );
     final map = Map<String, dynamic>.from(data as Map);

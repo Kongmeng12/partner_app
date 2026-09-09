@@ -88,7 +88,6 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<bool> signIn(String email, String password) async {
-    state = const AuthState(stage: AuthStage.restoring);
     try {
       await _saveSession(await _api.partnerLogin(email.trim(), password));
       _applyPartner(await _loadPartner());
@@ -102,7 +101,6 @@ class AuthNotifier extends Notifier<AuthState> {
   /// Registration creates a `pending` application, so success lands on the
   /// "under review" screen rather than the dashboard.
   Future<bool> register(Map<String, dynamic> body) async {
-    state = const AuthState(stage: AuthStage.restoring);
     try {
       await _saveSession(await _api.partnerRegister(body));
       _applyPartner(await _loadPartner());
