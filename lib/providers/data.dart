@@ -20,6 +20,12 @@ import 'auth.dart';
 /// Riverpod 3 dropped `StateProvider`, so the few pieces of view state below
 /// are plain `Notifier`s.
 
+/// The result of [PartnerActions.createRooms]: some numbers may have landed
+/// while others 400'd (almost always a duplicate room number) — both are
+/// normal outcomes, not something to throw over, so the caller decides how to
+/// tell the partner about a partial batch.
+typedef BulkRoomResult = ({List<RoomUnit> created, Map<String, String> failed});
+
 // ── dashboard ───────────────────────────────────────────────────────────────
 
 final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((ref) async {
@@ -482,6 +488,42 @@ class PartnerActions {
     return RoomUnit.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
+  /// Adds several numbered rooms at once — e.g. a generated range like
+  /// 301..310 — so a partner with a 20-room floor is not stuck tapping "add"
+  /// twenty times. There is no bulk endpoint on the API, so this fires the
+  /// requests concurrently and lets one duplicate-number 400 fail on its own
+  /// rather than aborting the rest; the caller gets back exactly which numbers
+  /// landed and which didn't, with the API's own message for each failure.
+  Future<BulkRoomResult> createRooms(
+    String roomTypeId,
+    List<String> roomNumbers, {
+    String? floor,
+  }) async {
+    final results = await Future.wait(roomNumbers.map((number) async {
+      try {
+        final data = await _api.post<dynamic>(
+          '/partner/room-types/$roomTypeId/rooms',
+          body: {
+            'roomNumber': number,
+            if (floor != null && floor.isNotEmpty) 'floor': floor,
+          },
+        );
+        return (
+          number: number,
+          room: RoomUnit.fromJson(Map<String, dynamic>.from(data as Map)),
+          error: null as String?,
+        );
+      } on ApiException catch (e) {
+        return (number: number, room: null as RoomUnit?, error: e.message);
+      }
+    }));
+    ref.invalidate(propertiesProvider);
+    return (
+      created: [for (final r in results) if (r.room != null) r.room!],
+      failed: {for (final r in results) if (r.error != null) r.number: r.error!},
+    );
+  }
+
   /// `status` is `available` · `maintenance` · `inactive` — `maintenance` is
   /// how a partner pulls this one room off sale without touching the room
   /// type's aggregate count. Every field is optional so the caller sends only
@@ -522,6 +564,16 @@ class PartnerActions {
 
   Future<void> uploadPropertyPhoto(String propertyId, MultipartFile file) async {
     await _api.upload<dynamic>('/partner/properties/$propertyId/photos', file: file);
+    ref.invalidate(propertiesProvider);
+  }
+
+  /// Applies a full front-to-back photo order in one call — `photoIds.first`
+  /// becomes the cover. See UploadsService.reorderPhotos on the backend.
+  Future<void> reorderPropertyPhotos(String propertyId, List<String> photoIds) async {
+    await _api.patch<dynamic>(
+      '/partner/properties/$propertyId/photos/order',
+      body: {'photoIds': photoIds},
+    );
     ref.invalidate(propertiesProvider);
   }
 

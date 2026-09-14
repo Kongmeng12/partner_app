@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api_client.dart';
@@ -14,6 +15,15 @@ import '../widgets/common.dart';
 /// Each cell shows the nightly rate and how many of the room type are still
 /// free — `3/8`. Inventory is a count in v2, not a free/sold flag, so every
 /// night can be repriced or closed regardless of what has already sold.
+///
+/// Three ways to build a selection, because a partner reaching for this
+/// screen is usually either fixing one night, repricing a whole month for a
+/// season change, or blocking out a holiday week — and tapping every day
+/// individually only serves the first of those:
+///   - tap a day — toggles it alone, for scattered individual nights
+///   - long-press a day, then tap another — selects everything between them
+///   - "ທັງເດືອນ" / "ເສົາ-ອາທິດ" chips — the two bulk patterns partners ask
+///     for constantly (a full season reprice, a weekend-rate bump)
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
 
@@ -24,14 +34,64 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   final Set<String> _selected = {};
 
-  /// Every night is selectable.
-  ///
-  /// v1 locked a booked night because a room was either free or sold. A room
-  /// type has several rooms, so a night with two of eight sold is still on sale
-  /// — and the partner may well want to reprice the remaining six.
+  /// Set while a long-press has anchored a range and is waiting for the
+  /// second tap that closes it. Null the rest of the time, which is when a
+  /// plain tap goes back to toggling one day at a time.
+  String? _rangeAnchor;
+
   void _toggle(CalendarDay day) {
+    if (_rangeAnchor != null) {
+      setState(() {
+        _selected
+          ..clear()
+          ..addAll(_isosBetween(_rangeAnchor!, day.date));
+      });
+      return;
+    }
     setState(() {
       _selected.contains(day.date) ? _selected.remove(day.date) : _selected.add(day.date);
+    });
+  }
+
+  void _startRange(CalendarDay day) {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _rangeAnchor = day.date;
+      _selected
+        ..clear()
+        ..add(day.date);
+    });
+  }
+
+  void _cancelRange() {
+    setState(() {
+      _rangeAnchor = null;
+      _selected.clear();
+    });
+  }
+
+  void _selectAll(List<CalendarDay> days) {
+    setState(() {
+      _rangeAnchor = null;
+      _selected
+        ..clear()
+        ..addAll(days.map((d) => d.date));
+    });
+  }
+
+  void _selectWeekends(List<CalendarDay> days) {
+    setState(() {
+      _rangeAnchor = null;
+      _selected
+        ..clear()
+        ..addAll(
+          days
+              .where((d) {
+                final weekday = DateTime.parse('${d.date}T00:00:00.000Z').weekday;
+                return weekday == DateTime.saturday || weekday == DateTime.sunday;
+              })
+              .map((d) => d.date),
+        );
     });
   }
 
@@ -41,10 +101,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }) async {
     if (_selected.isEmpty) return;
 
-    final priceField = TextEditingController();
     final chosen = days.where((d) => _selected.contains(d.date)).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
-    final anyClosed = chosen.any((d) => d.isClosed);
+    if (chosen.isEmpty) return;
 
     final action = await showModalBottomSheet<({int? price, String? status})>(
       context: context,
@@ -53,51 +112,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(R.xl)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${_selected.length} ຄືນທີ່ເລືອກ',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${laoDate('${chosen.first.date}T00:00:00.000Z')} – ${laoDate('${chosen.last.date}T00:00:00.000Z')}',
-              style: const TextStyle(fontSize: 13, color: C.muted),
-            ),
-            const SizedBox(height: 18),
-            TextField(
-              controller: priceField,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'ລາຄາຕໍ່ຄືນ (ກີບ)',
-                prefixText: '₭ ',
-              ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: () {
-                final price = int.tryParse(priceField.text.replaceAll(RegExp(r'[^0-9]'), ''));
-                if (price == null || price < 1000) return;
-                Navigator.of(ctx).pop((price: price, status: null));
-              },
-              child: const Text('ຕັ້ງລາຄາ'),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () => Navigator.of(ctx).pop(
-                // `inventory_status` is open|closed — "available" was v1's word
-                // and the enum rejects it.
-                (price: null, status: anyClosed ? 'open' : 'closed'),
-              ),
-              icon: Icon(anyClosed ? Icons.lock_open : Icons.lock_outline, size: 18),
-              label: Text(anyClosed ? 'ເປີດຂາຍຄືນ' : 'ປິດຂາຍ'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _ApplySheet(
+        nights: chosen.length,
+        fromLabel: laoDate('${chosen.first.date}T00:00:00.000Z'),
+        toLabel: laoDate('${chosen.last.date}T00:00:00.000Z'),
+        currentlyClosed: chosen.every((d) => d.isClosed),
       ),
     );
 
@@ -119,7 +138,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             );
       }
       if (!mounted) return;
-      setState(_selected.clear);
+      setState(() {
+        _selected.clear();
+        _rangeAnchor = null;
+      });
       showMessage(context, 'ອັບເດດ $updated ຄືນແລ້ວ');
     } on ApiException catch (e) {
       if (mounted) showMessage(context, e.message, error: true);
@@ -167,13 +189,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
           final roomTypeId = selected ?? list.first.roomType.id;
           final calendar = ref.watch(roomCalendarProvider((roomTypeId: roomTypeId, month: month)));
+          final days = calendar.value?.days ?? const <CalendarDay>[];
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: DropdownButtonFormField<String>(
-                  value: roomTypeId,
+                  initialValue: roomTypeId,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'ປະເພດຫ້ອງ'),
                   items: [
@@ -187,7 +210,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       ),
                   ],
                   onChanged: (v) {
-                    setState(_selected.clear);
+                    setState(() {
+                      _selected.clear();
+                      _rangeAnchor = null;
+                    });
                     ref.read(selectedRoomTypeProvider.notifier).set(v);
                   },
                 ),
@@ -198,7 +224,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   children: [
                     IconButton(
                       onPressed: () {
-                        setState(_selected.clear);
+                        setState(() {
+                          _selected.clear();
+                          _rangeAnchor = null;
+                        });
                         ref.read(calendarMonthProvider.notifier).shift(-1);
                       },
                       icon: const Icon(Icons.chevron_left),
@@ -212,7 +241,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     ),
                     IconButton(
                       onPressed: () {
-                        setState(_selected.clear);
+                        setState(() {
+                          _selected.clear();
+                          _rangeAnchor = null;
+                        });
                         ref.read(calendarMonthProvider.notifier).shift(1);
                       },
                       icon: const Icon(Icons.chevron_right),
@@ -220,6 +252,60 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   ],
                 ),
               ),
+              if (days.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _QuickChip(label: 'ທັງເດືອນ', onTap: () => _selectAll(days)),
+                              const SizedBox(width: 8),
+                              _QuickChip(label: 'ເສົາ-ອາທິດ', onTap: () => _selectWeekends(days)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_rangeAnchor != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: C.accentSoft,
+                      borderRadius: BorderRadius.circular(R.md),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.date_range, size: 16, color: C.accentDark),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'ກຳລັງເລືອກຊ່ວງ · ແຕະວັນສິ້ນສຸດ',
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: C.accentDark),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: _cancelRange,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'ຍົກເລີກ',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: C.accentDark),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Expanded(
                 child: calendar.when(
                   loading: () => const LoadingBlock(),
@@ -231,7 +317,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     month: month,
                     calendar: cal,
                     selected: _selected,
-                    onToggle: _toggle,
+                    rangeAnchor: _rangeAnchor,
+                    onTap: _toggle,
+                    onLongPress: _startRange,
                   ),
                 ),
               ),
@@ -243,16 +331,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     child: Row(
                       children: [
                         TextButton(
-                          onPressed: () => setState(_selected.clear),
+                          onPressed: () => setState(() {
+                            _selected.clear();
+                            _rangeAnchor = null;
+                          }),
                           child: const Text('ລ້າງ'),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: FilledButton(
-                            onPressed: () => _applyToSelection(
-                              roomTypeId: roomTypeId,
-                              days: calendar.value?.days ?? const [],
-                            ),
+                            onPressed: () => _applyToSelection(roomTypeId: roomTypeId, days: days),
                             child: Text('ແກ້ໄຂ ${_selected.length} ຄືນ'),
                           ),
                         ),
@@ -275,18 +363,60 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   String _monthLabel(DateTime month) => '${_laoMonths[month.month - 1]} ${month.year}';
 }
 
+/// Every calendar day between two ISO dates, inclusive, in either order —
+/// the long-press-then-tap range selection's whole job.
+List<String> _isosBetween(String a, String b) {
+  final start = DateTime.parse('${a}T00:00:00.000Z');
+  final end = DateTime.parse('${b}T00:00:00.000Z');
+  final from = start.isBefore(end) ? start : end;
+  final to = start.isBefore(end) ? end : start;
+
+  final isos = <String>[];
+  for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+    isos.add(apiDay(d));
+  }
+  return isos;
+}
+
+class _QuickChip extends StatelessWidget {
+  const _QuickChip({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: C.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: C.border),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: C.soft)),
+      ),
+    );
+  }
+}
+
 class _MonthGrid extends StatelessWidget {
   const _MonthGrid({
     required this.month,
     required this.calendar,
     required this.selected,
-    required this.onToggle,
+    required this.rangeAnchor,
+    required this.onTap,
+    required this.onLongPress,
   });
 
   final DateTime month;
   final RoomCalendar calendar;
   final Set<String> selected;
-  final void Function(CalendarDay) onToggle;
+  final String? rangeAnchor;
+  final void Function(CalendarDay) onTap;
+  final void Function(CalendarDay) onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -338,13 +468,16 @@ class _MonthGrid extends StatelessWidget {
             final day = byDate[iso];
             final isSelected = selected.contains(iso);
             final isToday = date == today;
+            final isAnchor = rangeAnchor == iso;
 
             return _DayCell(
               dayNumber: dayNumber,
               day: day,
               selected: isSelected,
               isToday: isToday,
-              onTap: day == null ? null : () => onToggle(day),
+              isRangeAnchor: isAnchor,
+              onTap: day == null ? null : () => onTap(day),
+              onLongPress: day == null ? null : () => onLongPress(day),
             );
           },
         ),
@@ -361,14 +494,18 @@ class _DayCell extends StatelessWidget {
     required this.day,
     required this.selected,
     required this.isToday,
+    required this.isRangeAnchor,
     this.onTap,
+    this.onLongPress,
   });
 
   final int dayNumber;
   final CalendarDay? day;
   final bool selected;
   final bool isToday;
+  final bool isRangeAnchor;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -393,47 +530,71 @@ class _DayCell extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(R.sm),
       child: Container(
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(R.sm),
           border: Border.all(
-            color: isToday && !selected ? C.accent : C.border,
-            width: isToday && !selected ? 1.6 : 1,
+            color: isRangeAnchor
+                ? C.accentDark
+                : isToday && !selected
+                    ? C.accent
+                    : C.border,
+            width: isRangeAnchor || (isToday && !selected) ? 1.8 : 1,
           ),
         ),
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-            Text(
-              '$dayNumber',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: foreground,
-              ),
-            ),
-            const SizedBox(height: 2),
-            if (day != null)
-              Text(
-                closed ? 'ປິດ' : kipShort(day!.price).replaceFirst('₭', ''),
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(fontSize: 9.5, color: foreground.withValues(alpha: 0.85)),
-              ),
-            // How many of this room type are left. The number is the whole
-            // point of a room type: "3/8" is sellable, "0/8" is not.
-            if (day != null && !closed)
-              Text(
-                '${day!.available}/${day!.total}',
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w600,
-                  color: foreground.withValues(alpha: 0.7),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$dayNumber',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: foreground.withValues(alpha: 0.65),
+                  ),
                 ),
+                const SizedBox(height: 3),
+                if (day != null)
+                  Text(
+                    closed ? 'ປິດຂາຍ' : kipShort(day!.price).replaceFirst('₭', ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: foreground),
+                  ),
+                // How many of this room type are left. The number is the whole
+                // point of a room type: "3/8" is sellable, "0/8" is not.
+                if (day != null && !closed) ...[
+                  const SizedBox(height: 3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: selected ? Colors.white.withValues(alpha: 0.25) : C.bg,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${day!.available}/${day!.total}',
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                        color: foreground.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (selected)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Icon(Icons.check_circle, size: 12, color: Colors.white.withValues(alpha: 0.9)),
               ),
           ],
         ),
@@ -473,6 +634,105 @@ class _Legend extends StatelessWidget {
         swatch(C.neutralBg, 'ປິດຂາຍ'),
         swatch(C.accent, 'ເລືອກຢູ່'),
       ],
+    );
+  }
+}
+
+/// The sheet a selection is turned into an actual change through — price and
+/// open/closed status together in one save, rather than two separate actions
+/// for what is usually one intent ("open this range at the holiday rate").
+class _ApplySheet extends StatefulWidget {
+  const _ApplySheet({
+    required this.nights,
+    required this.fromLabel,
+    required this.toLabel,
+    required this.currentlyClosed,
+  });
+
+  final int nights;
+  final String fromLabel;
+  final String toLabel;
+
+  /// Pre-selects the status control to match the selection's current state
+  /// only when every chosen night agrees — a mixed selection starts on "don't
+  /// change" rather than guessing which way the partner means to flip it.
+  final bool currentlyClosed;
+
+  @override
+  State<_ApplySheet> createState() => _ApplySheetState();
+}
+
+class _ApplySheetState extends State<_ApplySheet> {
+  final _priceField = TextEditingController();
+  String? _status; // null = leave status unchanged
+
+  bool get _canSave => _priceField.text.trim().isNotEmpty || _status != null;
+
+  @override
+  void dispose() {
+    _priceField.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final priceText = _priceField.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final price = priceText.isEmpty ? null : int.tryParse(priceText);
+    if (priceText.isNotEmpty && (price == null || price < 1000)) return;
+    if (!_canSave) return;
+    Navigator.of(context).pop((price: price, status: _status));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('${widget.nights} ຄືນທີ່ເລືອກ', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(
+            '${widget.fromLabel} – ${widget.toLabel}',
+            style: const TextStyle(fontSize: 13, color: C.muted),
+          ),
+          const SizedBox(height: 18),
+          TextField(
+            controller: _priceField,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'ລາຄາຕໍ່ຄືນ',
+              prefixText: '₭ ',
+              helperText: 'ປະໄວ້ຫວ່າງຖ້າບໍ່ປ່ຽນລາຄາ',
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('ສະຖານະຂາຍ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.soft)),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<String?>(
+            segments: const [
+              ButtonSegment(value: null, label: Text('ບໍ່ປ່ຽນ')),
+              ButtonSegment(value: 'open', label: Text('ເປີດຂາຍ')),
+              ButtonSegment(value: 'closed', label: Text('ປິດຂາຍ')),
+            ],
+            selected: {_status},
+            onSelectionChanged: (v) => setState(() => _status = v.first),
+            style: SegmentedButton.styleFrom(
+              selectedBackgroundColor: C.accentSoft,
+              selectedForegroundColor: C.accentDark,
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _canSave ? _save : null,
+            child: const Text('ບັນທຶກ'),
+          ),
+        ],
+      ),
     );
   }
 }
