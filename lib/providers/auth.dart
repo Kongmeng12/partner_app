@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/token_store.dart';
 import '../models/models.dart';
+import 'data.dart';
 
 final tokenStoreProvider = Provider<TokenStore>((ref) => TokenStore());
 
@@ -90,6 +91,7 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<bool> signIn(String email, String password) async {
     try {
       await _saveSession(await _api.partnerLogin(email.trim(), password));
+      _invalidateAccountData();
       _applyPartner(await _loadPartner());
       return true;
     } on ApiException catch (e) {
@@ -103,6 +105,7 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<bool> register(Map<String, dynamic> body) async {
     try {
       await _saveSession(await _api.partnerRegister(body));
+      _invalidateAccountData();
       _applyPartner(await _loadPartner());
       return true;
     } on ApiException catch (e) {
@@ -114,6 +117,7 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> signOut() async {
     await _api.logout();
     state = const AuthState(stage: AuthStage.signedOut);
+    _invalidateAccountData();
   }
 
   /// Called by the API client when a refresh fails — no round trip to make.
@@ -123,6 +127,30 @@ class AuthNotifier extends Notifier<AuthState> {
       stage: AuthStage.signedOut,
       error: 'ເຊສຊັນໝົດອາຍຸ · Session expired, please sign in again',
     );
+    _invalidateAccountData();
+  }
+
+  /// Every data provider in `data.dart` caches whatever it last fetched with
+  /// no idea which partner it was fetched for — nothing about them reads the
+  /// current account, so Riverpod has no reason to refetch just because the
+  /// tokens underneath changed. Without this, signing out of one partner and
+  /// into another leaves the first partner's properties/bookings/dashboard
+  /// on screen (right up until a hard browser refresh throws the whole
+  /// provider container away and forces everything to refetch) — called on
+  /// every stage change in or out of a session so no cache can outlive the
+  /// account it belongs to.
+  void _invalidateAccountData() {
+    ref.invalidate(propertiesProvider);
+    ref.invalidate(allRoomTypesProvider);
+    ref.invalidate(dashboardProvider);
+    ref.invalidate(bookingsProvider);
+    ref.invalidate(bookingCountsProvider);
+    ref.invalidate(payoutsProvider);
+    ref.invalidate(reviewsProvider);
+    ref.invalidate(notificationsProvider);
+    ref.invalidate(conversationsProvider);
+    ref.invalidate(unreadChatProvider);
+    ref.invalidate(profileProvider);
   }
 
   /// Re-reads the profile, so the "under review" screen can find out it has
