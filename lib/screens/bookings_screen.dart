@@ -174,6 +174,10 @@ class BookingCard extends StatelessWidget {
                 children: [
                   const Icon(Icons.meeting_room_outlined, size: 15, color: C.faint),
                   const SizedBox(width: 5),
+                  if (booking.roomNumbers.isNotEmpty) ...[
+                    _RoomNumberTag(numbers: booking.roomNumbers),
+                    const SizedBox(width: 6),
+                  ],
                   Expanded(
                     child: Text(
                       '${booking.roomType ?? 'ຫ້ອງ'}'
@@ -195,6 +199,29 @@ class BookingCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The assigned room numbers, in the accent colour so they are the first
+/// thing read on the room line — front desk looks bookings up by room.
+class _RoomNumberTag extends StatelessWidget {
+  const _RoomNumberTag({required this.numbers});
+
+  final List<String> numbers;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: C.accentSoft,
+        borderRadius: BorderRadius.circular(R.sm),
+      ),
+      child: Text(
+        'ຫ້ອງ ${numbers.join(', ')}',
+        style: const TextStyle(fontSize: 12, color: C.accentDark, fontWeight: FontWeight.w700),
       ),
     );
   }

@@ -25,6 +25,9 @@ dependencies:
   csv: ^6.0.0
   share_plus: ^10.1.2
   url_launcher: ^6.3.2
+  flutter_map: 7.0.2
+  latlong2: 0.9.1
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:
@@ -33,6 +36,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/images/logo.png
 
   # Bundled rather than fetched at runtime: Lao glyph coverage in the system
   # font is not guaranteed on every Android build, and a partner opening the app

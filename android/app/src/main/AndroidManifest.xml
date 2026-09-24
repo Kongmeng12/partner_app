@@ -3,6 +3,9 @@
          the API over the network too, and the debug manifest is not merged into
          it. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- The sign-up map's "use my current location" button. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="PhaPhak Partner"

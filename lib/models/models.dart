@@ -354,6 +354,7 @@ class BookingSummary {
     this.guestPhone,
     this.roomType,
     this.quantity = 1,
+    this.roomNumbers = const [],
     this.paymentStatus,
     this.createdAt,
   });
@@ -366,6 +367,9 @@ class BookingSummary {
   final String? guestPhone;
   final String? roomType;
   final int quantity;
+
+  /// The numbered rooms assigned to this booking; empty until one is.
+  final List<String> roomNumbers;
   final String checkIn;
   final String checkOut;
   final int nights;
@@ -390,6 +394,7 @@ class BookingSummary {
     guestPhone: _strOrNull(j['guestPhone']),
     roomType: _strOrNull(j['roomType']),
     quantity: _int(j['quantity'], 1),
+    roomNumbers: (j['roomNumbers'] as List?)?.map((e) => e.toString()).toList() ?? const [],
     checkIn: _str(j['checkIn']),
     checkOut: _str(j['checkOut']),
     nights: _int(j['nights']),
@@ -501,6 +506,19 @@ class PartnerDashboard {
   int get arrivalCount => _int(_today['arrivalCount']);
   int get departureCount => _int(_today['departureCount']);
   int get stayingCount => _int(_today['stayingCount']);
+
+  /// Today's arrivals split by who picks the numbered room. Arrivals whose
+  /// room type has no numbered rooms are in neither count.
+  int get guestChoseCount => _int(_today['guestChoseCount']);
+  int get propertyChoosesCount => _int(_today['propertyChoosesCount']);
+
+  Map<String, dynamic> get _toAssign =>
+      Map<String, dynamic>.from(raw['roomsToAssign'] as Map? ?? const {});
+
+  /// Upcoming bookings the guest left to the property, with no room assigned
+  /// yet. Soonest first, capped at 20; [roomsToAssignCount] is the full count.
+  List<Map<String, dynamic>> get roomsToAssign => _mapList(_toAssign['items']);
+  int get roomsToAssignCount => _int(_toAssign['count']);
 
   int get pendingBookings => _int(raw['pendingBookings']);
 

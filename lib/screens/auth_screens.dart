@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../providers/auth.dart';
 import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import 'location_picker_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -162,7 +165,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       'phone',
       'businessName',
       'propertyName',
-      'address',
       'bankName',
       'bankAccount',
     ])
@@ -174,15 +176,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   /// which is what used to make every application fail validation.
   String _provinceId = '';
   String _districtId = '';
+
+  /// Where the property is, pinned on the map. Required: guests find a stay
+  /// by its pin, and an address typed from memory is the usual reason a
+  /// property shows up in the wrong place.
+  LatLng? _location;
+  bool _showPassword = false;
   bool _busy = false;
   bool _acceptedTerms = false;
 
-  /// The four values of the `property_type` enum. Anything else is rejected by
-  /// the registration DTO — this list used to carry `hotel` and `apartment`,
-  /// which the database has never had.
+  /// The values of the `property_type` enum. Anything else is rejected by the
+  /// registration DTO. `hotel` exists since migration 0018; `apartment` still
+  /// does not.
   static const _types = {
     'homestay': 'ໂຮມສະເຕ',
     'guesthouse': 'ເຮືອນພັກ',
+    'hotel': 'ໂຮງແຮມ',
     'resort': 'ຣີສອດ',
     'villa': 'ວິນລ່າ',
   };
@@ -212,7 +221,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       'propertyType': _propertyType,
       'provinceId': int.parse(_provinceId),
       if (_districtId.isNotEmpty) 'districtId': int.parse(_districtId),
-      'address': _fields['address']!.text.trim(),
+      'address': _addressText(),
+      'lat': _location!.latitude,
+      'lng': _location!.longitude,
       // Required by the API, and required to be true. The server records which
       // version of each document was live when this was ticked.
       'acceptedTerms': _acceptedTerms,
@@ -301,7 +312,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         ),
                         _provincePicker(),
                         _districtPicker(),
-                        _text('address', 'ທີ່ຢູ່', minLength: 4, lines: 2),
+                        _locationField(),
                       ],
                     ),
                   ),
@@ -422,6 +433,103 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
   }
 
+  /// The API still takes an address string, so it is built from the chosen
+  /// district and province. The pin is what actually locates the property.
+  String _addressText() {
+    final province = ref
+        .read(provincesProvider)
+        .value
+        ?.where((p) => p.id == _provinceId)
+        .firstOrNull
+        ?.name;
+    final district = _districtId.isEmpty
+        ? null
+        : ref
+            .read(districtsProvider(_provinceId))
+            .value
+            ?.where((d) => d.id == _districtId)
+            .firstOrNull
+            ?.name;
+    final text = [district, province].whereType<String>().join(', ');
+    // The DTO wants at least 4 characters. Fall back to the coordinates
+    // rather than fail an otherwise complete application.
+    return text.length >= 4
+        ? text
+        : '${_location!.latitude.toStringAsFixed(6)}, ${_location!.longitude.toStringAsFixed(6)}';
+  }
+
+  /// The pin, as a form field so a missing one fails validation like any other
+  /// required input. The preview is non-interactive: a draggable map inside a
+  /// scrolling form would steal the page's scroll.
+  Widget _locationField() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: FormField<LatLng>(
+        validator: (_) => _location == null ? 'ເລືອກທີ່ຕັ້ງໃນແຜນທີ່' : null,
+        builder: (field) {
+          Future<void> pick() async {
+            final picked = await Navigator.of(context).push<LatLng>(
+              MaterialPageRoute(builder: (_) => LocationPickerScreen(initial: _location)),
+            );
+            if (picked == null || !mounted) return;
+            setState(() => _location = picked);
+            field.didChange(picked);
+          }
+
+          final location = _location;
+          return InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'ທີ່ຕັ້ງໃນແຜນທີ່',
+              errorText: field.errorText,
+              contentPadding: const EdgeInsets.all(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (location != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(R.md),
+                    child: SizedBox(
+                      height: 150,
+                      child: IgnorePointer(
+                        child: FlutterMap(
+                          // Keyed on the point: MapOptions are only read once,
+                          // so a new pin needs a new map to re-centre.
+                          key: ValueKey(location),
+                          options: MapOptions(initialCenter: location, initialZoom: 15),
+                          children: [
+                            mapTiles(),
+                            MarkerLayer(markers: [pinMarker(location)]),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${location.latitude.toStringAsFixed(5)}, ${location.longitude.toStringAsFixed(5)}',
+                    style: const TextStyle(color: C.soft, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                OutlinedButton.icon(
+                  onPressed: pick,
+                  icon: Icon(
+                    location == null
+                        ? Icons.add_location_alt_outlined
+                        : Icons.edit_location_alt_outlined,
+                    size: 18,
+                  ),
+                  label: Text(location == null ? 'ເລືອກໃນແຜນທີ່' : 'ປ່ຽນທີ່ຕັ້ງ'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _text(
     String key,
     String label, {
@@ -436,10 +544,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: _fields[key],
-        obscureText: obscure,
+        obscureText: obscure && !_showPassword,
         keyboardType: keyboard,
         maxLines: obscure ? 1 : lines,
-        decoration: InputDecoration(labelText: label),
+        decoration: InputDecoration(
+          labelText: label,
+          // The same eye as the login screen: an applicant typing a new
+          // password with no confirm field needs a way to check it.
+          suffixIcon: obscure
+              ? IconButton(
+                  icon: Icon(
+                    _showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _showPassword = !_showPassword),
+                )
+              : null,
+        ),
         validator: validator ??
             (v) {
               final value = v?.trim() ?? '';
