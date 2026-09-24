@@ -707,7 +707,7 @@ class _RoomUnitsScreen extends ConsumerWidget {
     final properties = ref.watch(propertiesProvider).value;
     final roomType = _roomTypeById(properties, roomTypeId);
     final rooms = roomType?.rooms ?? const <RoomUnit>[];
-    final floors = _groupRoomsByFloor(rooms);
+    final floors = groupRoomsByFloor(rooms);
 
     return Scaffold(
       appBar: AppBar(title: Text('ເລກຫ້ອງ · $roomTypeName', overflow: TextOverflow.ellipsis)),
@@ -866,48 +866,6 @@ class _RoomTile extends StatelessWidget {
   }
 }
 
-class _FloorGroup {
-  const _FloorGroup(this.label, this.rooms);
-  final String label;
-  final List<RoomUnit> rooms;
-}
-
-/// Groups rooms by floor and orders both the floors and the rooms within each
-/// the way a person reads a building, not the way a database returns rows:
-/// numeric floors ascend (1, 2, 3…), named ones follow alphabetically, and
-/// rooms with no floor set trail last as their own group. Within a floor,
-/// "2" sorts before "10" — plain string sorting would not.
-List<_FloorGroup> _groupRoomsByFloor(List<RoomUnit> rooms) {
-  const noFloor = '';
-  final groups = <String, List<RoomUnit>>{};
-  for (final room in rooms) {
-    final floor = room.floor?.trim();
-    final key = (floor == null || floor.isEmpty) ? noFloor : floor;
-    groups.putIfAbsent(key, () => []).add(room);
-  }
-  for (final list in groups.values) {
-    list.sort((a, b) => _naturalCompare(a.roomNumber, b.roomNumber));
-  }
-  final keys = groups.keys.toList()
-    ..sort((a, b) {
-      if (a == noFloor) return 1;
-      if (b == noFloor) return -1;
-      final an = int.tryParse(a);
-      final bn = int.tryParse(b);
-      if (an != null && bn != null) return an.compareTo(bn);
-      if (an != null) return -1;
-      if (bn != null) return 1;
-      return a.compareTo(b);
-    });
-  return [for (final key in keys) _FloorGroup(key, groups[key]!)];
-}
-
-int _naturalCompare(String a, String b) {
-  final an = int.tryParse(a);
-  final bn = int.tryParse(b);
-  if (an != null && bn != null) return an.compareTo(bn);
-  return a.compareTo(b);
-}
 
 /// Create/edit form for one numbered room — or, when creating, several at
 /// once. Status is only shown when editing — like `_RoomSheet`'s `isActive`,

@@ -17,7 +17,20 @@ import '../widgets/common.dart';
 /// room rate in person. Offering either here would promise something the API
 /// will not honour.
 class WalkInScreen extends ConsumerStatefulWidget {
-  const WalkInScreen({super.key});
+  const WalkInScreen({
+    super.key,
+    this.roomTypeId,
+    this.date,
+    this.roomId,
+    this.roomNumber,
+  });
+
+  /// Set when opened from an empty room on the Calendar: the form starts on
+  /// that room type and night, and the booking is given that exact room.
+  final String? roomTypeId;
+  final String? date;
+  final String? roomId;
+  final String? roomNumber;
 
   @override
   ConsumerState<WalkInScreen> createState() => _WalkInScreenState();
@@ -29,9 +42,13 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
   final _phone = TextEditingController();
   final _email = TextEditingController();
 
-  String? _roomTypeId;
-  DateTime _checkIn = todayUtc();
-  DateTime _checkOut = addDays(todayUtc(), 1);
+  late String? _roomTypeId = widget.roomTypeId;
+  late DateTime _checkIn = parseDay(widget.date) ?? todayUtc();
+  late DateTime _checkOut = addDays(_checkIn, 1);
+
+  /// The room to hold for this booking — dropped the moment the partner picks
+  /// a different room type, since that number belongs to the original one.
+  late String? _roomId = widget.roomId;
   int _guests = 1;
   bool _busy = false;
 
@@ -45,7 +62,8 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 
   Future<void> _pickDate({required bool isCheckIn}) async {
     final initial = isCheckIn ? _checkIn : _checkOut;
-    final firstAllowed = isCheckIn ? addDays(todayUtc(), -30) : addDays(_checkIn, 1);
+    final firstAllowed =
+        isCheckIn ? addDays(todayUtc(), -30) : addDays(_checkIn, 1);
 
     final picked = await showDatePicker(
       context: context,
@@ -77,7 +95,9 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 
     setState(() => _busy = true);
     try {
-      final booking = await ref.read(actionsProvider).createWalkIn(
+      final booking = await ref
+          .read(actionsProvider)
+          .createWalkIn(
             roomTypeId: _roomTypeId!,
             checkIn: _checkIn,
             checkOut: _checkOut,
@@ -87,9 +107,20 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
             guestEmail: _email.text.trim(),
           );
 
+      final bookingId = strOf(booking['id']);
+      var roomNote = '';
+      if (_roomId != null) {
+        try {
+          await ref.read(actionsProvider).assignRoom(bookingId, [_roomId!]);
+        } on ApiException catch (e) {
+          // The stay is saved either way; only the room number failed to stick.
+          roomNote = ' · ບໍ່ໄດ້ກຳນົດເບີຫ້ອງ: ${e.message}';
+        }
+      }
+
       if (!mounted) return;
-      showMessage(context, 'ບັນທຶກແລ້ວ · ${strOf(booking['code'])}');
-      context.go('/bookings/${strOf(booking['id'])}');
+      showMessage(context, 'ບັນທຶກແລ້ວ · ${strOf(booking['code'])}$roomNote');
+      context.go('/bookings/$bookingId');
     } on ApiException catch (e) {
       // A 409 here means the room is already full on one of those nights —
       // the message names the dates.
@@ -108,16 +139,22 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
       appBar: AppBar(title: const Text('ບັນທຶກ Walk-in')),
       body: roomTypes.when(
         loading: () => const LoadingBlock(),
-        error: (e, _) => ErrorRetry(error: e, onRetry: () => ref.invalidate(propertiesProvider)),
+        error:
+            (e, _) => ErrorRetry(
+              error: e,
+              onRetry: () => ref.invalidate(propertiesProvider),
+            ),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
-              message: 'ຍັງບໍ່ມີຫ້ອງທີ່ເປີດຂາຍ\nເພີ່ມຫ້ອງກ່ອນຈຶ່ງບັນທຶກ Walk-in ໄດ້',
+              message:
+                  'ຍັງບໍ່ມີຫ້ອງທີ່ເປີດຂາຍ\nເພີ່ມຫ້ອງກ່ອນຈຶ່ງບັນທຶກ Walk-in ໄດ້',
               icon: Icons.meeting_room_outlined,
             );
           }
 
-          final selected = list.where((e) => e.roomType.id == _roomTypeId).firstOrNull;
+          final selected =
+              list.where((e) => e.roomType.id == _roomTypeId).firstOrNull;
 
           return Form(
             key: _form,
@@ -143,14 +180,43 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                               ),
                             ),
                         ],
-                        onChanged: (v) => setState(() {
-                          _roomTypeId = v;
-                          final rt = list.where((e) => e.roomType.id == v).firstOrNull?.roomType;
-                          if (rt != null && _guests > rt.maxOccupancy) {
-                            _guests = rt.maxOccupancy;
-                          }
-                        }),
+                        onChanged:
+                            (v) => setState(() {
+                              if (v != widget.roomTypeId) _roomId = null;
+                              _roomTypeId = v;
+                              final rt =
+                                  list
+                                      .where((e) => e.roomType.id == v)
+                                      .firstOrNull
+                                      ?.roomType;
+                              if (rt != null && _guests > rt.maxOccupancy) {
+                                _guests = rt.maxOccupancy;
+                              }
+                            }),
                       ),
+                      if (_roomId != null && widget.roomNumber != null) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.meeting_room_outlined,
+                              size: 16,
+                              color: C.accentDark,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'ຈະກຳນົດຫ້ອງເລກ ${widget.roomNumber} ໃຫ້ແຂກອັດຕະໂນມັດ',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: C.accentDark,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       Row(
                         children: [
@@ -176,26 +242,40 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           '$nights ຄືນ',
-                          style: const TextStyle(fontSize: 12.5, color: C.muted),
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: C.muted,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Text('ຜູ້ເຂົ້າພັກ', style: TextStyle(fontSize: 13.5, color: C.soft)),
+                          const Text(
+                            'ຜູ້ເຂົ້າພັກ',
+                            style: TextStyle(fontSize: 13.5, color: C.soft),
+                          ),
                           const Spacer(),
                           IconButton(
-                            onPressed: _guests > 1 ? () => setState(() => _guests--) : null,
+                            onPressed:
+                                _guests > 1
+                                    ? () => setState(() => _guests--)
+                                    : null,
                             icon: const Icon(Icons.remove_circle_outline),
                           ),
                           Text(
                             '$_guests',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           IconButton(
-                            onPressed: selected == null || _guests < selected.roomType.maxOccupancy
-                                ? () => setState(() => _guests++)
-                                : null,
+                            onPressed:
+                                selected == null ||
+                                        _guests < selected.roomType.maxOccupancy
+                                    ? () => setState(() => _guests++)
+                                    : null,
                             icon: const Icon(Icons.add_circle_outline),
                           ),
                         ],
@@ -205,7 +285,10 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                           alignment: Alignment.centerLeft,
                           child: Text(
                             'ຫ້ອງນີ້ຮັບໄດ້ສູງສຸດ ${selected.roomType.maxOccupancy} ຄົນ',
-                            style: const TextStyle(fontSize: 12, color: C.faint),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: C.faint,
+                            ),
                           ),
                         ),
                     ],
@@ -219,16 +302,22 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                       TextFormField(
                         controller: _name,
                         decoration: const InputDecoration(labelText: 'ຊື່ແຂກ'),
-                        validator: (v) =>
-                            (v == null || v.trim().length < 2) ? 'ໃສ່ຊື່ແຂກ' : null,
+                        validator:
+                            (v) =>
+                                (v == null || v.trim().length < 2)
+                                    ? 'ໃສ່ຊື່ແຂກ'
+                                    : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _phone,
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(labelText: 'ເບີໂທ'),
-                        validator: (v) =>
-                            (v == null || v.trim().length < 6) ? 'ໃສ່ເບີໂທ' : null,
+                        validator:
+                            (v) =>
+                                (v == null || v.trim().length < 6)
+                                    ? 'ໃສ່ເບີໂທ'
+                                    : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -261,7 +350,11 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                       Expanded(
                         child: Text(
                           'Walk-in ຄິດຄ່າຄອມມິຊຊັນຕ່ຳກວ່າ ແລະ ບໍ່ເກັບຄ່າບໍລິການຈາກແຂກ',
-                          style: TextStyle(fontSize: 12.5, color: C.infoFg, height: 1.5),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: C.infoFg,
+                            height: 1.5,
+                          ),
                         ),
                       ),
                     ],
@@ -270,13 +363,17 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                 const SizedBox(height: 18),
                 FilledButton(
                   onPressed: _busy ? null : _submit,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('ບັນທຶກການເຂົ້າພັກ'),
+                  child:
+                      _busy
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Text('ບັນທຶກການເຂົ້າພັກ'),
                 ),
               ],
             ),
@@ -288,7 +385,11 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 }
 
 class _DateField extends StatelessWidget {
-  const _DateField({required this.label, required this.value, required this.onTap});
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
 
   final String label;
   final String value;
@@ -304,7 +405,10 @@ class _DateField extends StatelessWidget {
           labelText: label,
           suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
         ),
-        child: Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        child: Text(
+          value,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

@@ -13,12 +13,14 @@ library;
 import 'room_unit.dart';
 
 export 'room_unit.dart';
+export 'occupancy.dart';
 
 /// Reads a value the API may send as a number or a numeric string.
 int _int(Object? v, [int fallback = 0]) {
   if (v is int) return v;
   if (v is num) return v.round();
-  if (v is String) return int.tryParse(v) ?? double.tryParse(v)?.round() ?? fallback;
+  if (v is String)
+    return int.tryParse(v) ?? double.tryParse(v)?.round() ?? fallback;
   return fallback;
 }
 
@@ -51,13 +53,14 @@ class PhotoRef {
   final bool isCover;
 
   factory PhotoRef.fromJson(Map<String, dynamic> j) => PhotoRef(
-        id: _str(j['id']),
-        url: _str(j['url']),
-        isCover: _bool(j['isCover']),
-      );
+    id: _str(j['id']),
+    url: _str(j['url']),
+    isCover: _bool(j['isCover']),
+  );
 }
 
-List<PhotoRef> _photos(Object? v) => _mapList(v).map(PhotoRef.fromJson).toList();
+List<PhotoRef> _photos(Object? v) =>
+    _mapList(v).map(PhotoRef.fromJson).toList();
 
 /// A province, from the public `/locations/provinces`.
 ///
@@ -71,10 +74,10 @@ class Province {
   final String nameEn;
 
   factory Province.fromJson(Map<String, dynamic> j) => Province(
-        id: _str(j['id']),
-        name: _str(j['name']),
-        nameEn: _str(j['nameEn']),
-      );
+    id: _str(j['id']),
+    name: _str(j['name']),
+    nameEn: _str(j['nameEn']),
+  );
 }
 
 /// A district within a province, from `/locations/districts?provinceId=`.
@@ -86,10 +89,10 @@ class District {
   final String name;
 
   factory District.fromJson(Map<String, dynamic> j) => District(
-        id: _str(j['id']),
-        provinceId: _str(j['provinceId']),
-        name: _str(j['name']),
-      );
+    id: _str(j['id']),
+    provinceId: _str(j['provinceId']),
+    name: _str(j['name']),
+  );
 }
 
 /// A bank account, as `/partner/me` returns it — the number always masked.
@@ -111,12 +114,12 @@ class BankAccount {
   final bool isDefault;
 
   factory BankAccount.fromJson(Map<String, dynamic> j) => BankAccount(
-        id: _str(j['id']),
-        bankName: _str(j['bankName']),
-        accountName: _str(j['accountName']),
-        account: _str(j['account']),
-        isDefault: _bool(j['isDefault']),
-      );
+    id: _str(j['id']),
+    bankName: _str(j['bankName']),
+    accountName: _str(j['accountName']),
+    account: _str(j['account']),
+    isDefault: _bool(j['isDefault']),
+  );
 }
 
 /// `GET /partner/me`.
@@ -160,25 +163,30 @@ class Partner {
   bool get isRejected => status == 'rejected';
   bool get isSuspended => status == 'suspended';
 
-  BankAccount? get defaultBank => bankAccounts.isEmpty
-      ? null
-      : bankAccounts.firstWhere((b) => b.isDefault, orElse: () => bankAccounts.first);
+  BankAccount? get defaultBank =>
+      bankAccounts.isEmpty
+          ? null
+          : bankAccounts.firstWhere(
+            (b) => b.isDefault,
+            orElse: () => bankAccounts.first,
+          );
 
   factory Partner.fromJson(Map<String, dynamic> j) => Partner(
-        id: _str(j['id']),
-        businessName: _str(j['businessName']),
-        email: _str(j['email']),
-        ownerName: _str(j['ownerName']),
-        phone: _str(j['contactPhone']),
-        status: _str(j['status'], 'pending'),
-        businessType: _strOrNull(j['businessType']),
-        taxId: _strOrNull(j['taxId']),
-        verifiedAt: _strOrNull(j['verifiedAt']),
-        commissionRate: _double(j['commissionRate']),
-        walkinCommissionRate: _double(j['walkinCommissionRate']),
-        propertyCount: _int(j['propertyCount']),
-        bankAccounts: _mapList(j['bankAccounts']).map(BankAccount.fromJson).toList(),
-      );
+    id: _str(j['id']),
+    businessName: _str(j['businessName']),
+    email: _str(j['email']),
+    ownerName: _str(j['ownerName']),
+    phone: _str(j['contactPhone']),
+    status: _str(j['status'], 'pending'),
+    businessType: _strOrNull(j['businessType']),
+    taxId: _strOrNull(j['taxId']),
+    verifiedAt: _strOrNull(j['verifiedAt']),
+    commissionRate: _double(j['commissionRate']),
+    walkinCommissionRate: _double(j['walkinCommissionRate']),
+    propertyCount: _int(j['propertyCount']),
+    bankAccounts:
+        _mapList(j['bankAccounts']).map(BankAccount.fromJson).toList(),
+  );
 }
 
 /// A category of room, not a single room — "Standard AC", priced once, with
@@ -241,23 +249,23 @@ class RoomType {
   String get label => '$name × $totalRooms';
 
   factory RoomType.fromJson(Map<String, dynamic> j) => RoomType(
-        id: _str(j['id']),
-        propertyId: _str(j['propertyId']),
-        name: _str(j['name']),
-        description: _strOrNull(j['description']),
-        hasAc: _bool(j['hasAc'], true),
-        bedType: _str(j['bedType']),
-        basePrice: _int(j['basePrice']),
-        maxOccupancy: _int(j['maxOccupancy'], 1),
-        totalRooms: _int(j['totalRooms'], 1),
-        minNights: _int(j['minNights'], 1),
-        extraGuestFee: _int(j['extraGuestFee']),
-        sizeSqm: _intOrNull(j['sizeSqm']),
-        isActive: _bool(j['isActive'], true),
-        photos: _photos(j['images']),
-        allowRoomSelection: _bool(j['allowRoomSelection']),
-        rooms: roomUnitsOf(j['rooms']),
-      );
+    id: _str(j['id']),
+    propertyId: _str(j['propertyId']),
+    name: _str(j['name']),
+    description: _strOrNull(j['description']),
+    hasAc: _bool(j['hasAc'], true),
+    bedType: _str(j['bedType']),
+    basePrice: _int(j['basePrice']),
+    maxOccupancy: _int(j['maxOccupancy'], 1),
+    totalRooms: _int(j['totalRooms'], 1),
+    minNights: _int(j['minNights'], 1),
+    extraGuestFee: _int(j['extraGuestFee']),
+    sizeSqm: _intOrNull(j['sizeSqm']),
+    isActive: _bool(j['isActive'], true),
+    photos: _photos(j['images']),
+    allowRoomSelection: _bool(j['allowRoomSelection']),
+    rooms: roomUnitsOf(j['rooms']),
+  );
 }
 
 class Property {
@@ -308,24 +316,24 @@ class Property {
       [district, province].where((s) => s != null && s.isNotEmpty).join(', ');
 
   factory Property.fromJson(Map<String, dynamic> j) => Property(
-        id: _str(j['id']),
-        name: _str(j['name']),
-        type: _str(j['type']),
-        description: _strOrNull(j['description']),
-        phone: _strOrNull(j['phone']),
-        province: _strOrNull(j['province']),
-        district: _strOrNull(j['district']),
-        address: _strOrNull(j['address']),
-        lat: _double(j['lat']),
-        lng: _double(j['lng']),
-        rating: _double(j['rating']),
-        reviewCount: _int(j['reviewCount']),
-        status: _str(j['status'], 'draft'),
-        amenityIds: (j['amenityIds'] as List?)?.map(_str).toList() ?? const [],
-        photos: _photos(j['images']),
-        roomTypes: _mapList(j['roomTypes']).map(RoomType.fromJson).toList(),
-        bookingCount: _int(j['bookingCount']),
-      );
+    id: _str(j['id']),
+    name: _str(j['name']),
+    type: _str(j['type']),
+    description: _strOrNull(j['description']),
+    phone: _strOrNull(j['phone']),
+    province: _strOrNull(j['province']),
+    district: _strOrNull(j['district']),
+    address: _strOrNull(j['address']),
+    lat: _double(j['lat']),
+    lng: _double(j['lng']),
+    rating: _double(j['rating']),
+    reviewCount: _int(j['reviewCount']),
+    status: _str(j['status'], 'draft'),
+    amenityIds: (j['amenityIds'] as List?)?.map(_str).toList() ?? const [],
+    photos: _photos(j['images']),
+    roomTypes: _mapList(j['roomTypes']).map(RoomType.fromJson).toList(),
+    bookingCount: _int(j['bookingCount']),
+  );
 }
 
 class BookingSummary {
@@ -374,25 +382,25 @@ class BookingSummary {
   bool get isWalkIn => source == 'walk_in';
 
   factory BookingSummary.fromJson(Map<String, dynamic> j) => BookingSummary(
-        id: _str(j['id']),
-        code: _str(j['code']),
-        propertyId: _strOrNull(j['propertyId']),
-        property: _str(j['property']),
-        guest: _str(j['guest']),
-        guestPhone: _strOrNull(j['guestPhone']),
-        roomType: _strOrNull(j['roomType']),
-        quantity: _int(j['quantity'], 1),
-        checkIn: _str(j['checkIn']),
-        checkOut: _str(j['checkOut']),
-        nights: _int(j['nights']),
-        guests: _int(j['guests'], 1),
-        total: _int(j['total']),
-        payout: _int(j['payout']),
-        status: _str(j['status']),
-        source: _str(j['source'], 'app'),
-        paymentStatus: _strOrNull(j['paymentStatus']),
-        createdAt: _strOrNull(j['createdAt']),
-      );
+    id: _str(j['id']),
+    code: _str(j['code']),
+    propertyId: _strOrNull(j['propertyId']),
+    property: _str(j['property']),
+    guest: _str(j['guest']),
+    guestPhone: _strOrNull(j['guestPhone']),
+    roomType: _strOrNull(j['roomType']),
+    quantity: _int(j['quantity'], 1),
+    checkIn: _str(j['checkIn']),
+    checkOut: _str(j['checkOut']),
+    nights: _int(j['nights']),
+    guests: _int(j['guests'], 1),
+    total: _int(j['total']),
+    payout: _int(j['payout']),
+    status: _str(j['status']),
+    source: _str(j['source'], 'app'),
+    paymentStatus: _strOrNull(j['paymentStatus']),
+    createdAt: _strOrNull(j['createdAt']),
+  );
 }
 
 /// `GET /partner/bookings/:id` — camelCase and flat, unlike v1's raw row.
@@ -432,7 +440,9 @@ class BookingDetail {
   String get guestEmail => _str(_guest['email']);
 
   Map<String, dynamic>? get _roomType =>
-      raw['roomType'] is Map ? Map<String, dynamic>.from(raw['roomType'] as Map) : null;
+      raw['roomType'] is Map
+          ? Map<String, dynamic>.from(raw['roomType'] as Map)
+          : null;
   String get roomTypeName => _str(_roomType?['name'], '—');
   int get roomQuantity => _int(_roomType?['quantity'], 1);
   int get pricePerNight => _int(_roomType?['pricePerNight']);
@@ -452,26 +462,32 @@ class BookingDetail {
       .where((p) => p['status'] == 'paid')
       .fold(0, (sum, p) => sum + _int(p['amount']));
 
-  /// The one-way ladder the backend enforces. Anything else is a 400, so the
-  /// UI offers exactly these and nothing more.
-  String? get nextStatus => switch (status) {
-        'pending' => 'confirmed',
-        'confirmed' => 'staying',
-        'staying' => 'completed',
-        _ => null,
-      };
+  /// The moves the API will accept for this booking *today* — it works out
+  /// the date windows itself (check-in opens on the arrival date, and so on),
+  /// so the UI offers exactly these and nothing more instead of guessing.
+  List<String> get allowedMoves =>
+      (raw['nextStatus'] as List?)?.map((e) => e.toString()).toList() ?? const [];
 
-  String? get nextStatusLabel => switch (nextStatus) {
-        'confirmed' => 'ຢືນຢັນການຈອງ',
-        'staying' => 'ເຊັກອິນ (ເຂົ້າພັກ)',
-        'completed' => 'ເຊັກເອົາ (ພັກຈົບ)',
-        _ => null,
-      };
+  bool get canCheckIn => status == 'confirmed' && allowedMoves.contains('staying');
+  bool get canCheckOut => status == 'staying' && allowedMoves.contains('completed');
+
+  /// A mis-tapped check-in can be walked back while the guest is `staying`.
+  bool get canUndoCheckIn => status == 'staying' && allowedMoves.contains('confirmed');
+
+  /// Unpaid: nothing to do by hand — the booking confirms itself when the
+  /// payment lands (and is cancelled by the system if the hold runs out).
+  bool get awaitingPayment => status == 'pending';
 
   /// A finished or already-cancelled stay cannot be cancelled; the API refuses
   /// both with a 400.
   bool get canCancel =>
       status != 'cancelled' && status != 'completed' && status != 'no_show';
+
+  /// Only a cancelled booking refuses a room assignment — unlike [canCancel],
+  /// a completed or no-show stay may still be worth correcting after the fact
+  /// (the guest really was in room 204, the front desk just never recorded
+  /// it), so this stays open on every other status.
+  bool get canAssignRoom => status != 'cancelled';
 }
 
 /// `GET /partner/dashboard`.
@@ -543,7 +559,8 @@ class Payout {
   bool get isPaid => status == 'paid';
 
   factory Payout.fromJson(Map<String, dynamic> j) {
-    final bank = j['bank'] is Map ? Map<String, dynamic>.from(j['bank'] as Map) : null;
+    final bank =
+        j['bank'] is Map ? Map<String, dynamic>.from(j['bank'] as Map) : null;
     return Payout(
       id: _str(j['id']),
       periodStart: _str(j['periodStart']),
@@ -580,14 +597,14 @@ class Review {
   final String? createdAt;
 
   factory Review.fromJson(Map<String, dynamic> j) => Review(
-        id: _str(j['id']),
-        stars: _int(j['stars']),
-        property: _str(j['property']),
-        guest: _str(j['guest']),
-        title: _strOrNull(j['title']),
-        comment: _strOrNull(j['comment']),
-        createdAt: _strOrNull(j['createdAt']),
-      );
+    id: _str(j['id']),
+    stars: _int(j['stars']),
+    property: _str(j['property']),
+    guest: _str(j['guest']),
+    title: _strOrNull(j['title']),
+    comment: _strOrNull(j['comment']),
+    createdAt: _strOrNull(j['createdAt']),
+  );
 }
 
 class AppNotification {
@@ -608,13 +625,13 @@ class AppNotification {
   final String? createdAt;
 
   factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
-        id: _str(j['id']),
-        title: _str(j['title']),
-        body: _str(j['message']),
-        type: _str(j['type']),
-        isRead: _bool(j['isRead']),
-        createdAt: _strOrNull(j['createdAt']),
-      );
+    id: _str(j['id']),
+    title: _str(j['title']),
+    body: _str(j['message']),
+    type: _str(j['type']),
+    isRead: _bool(j['isRead']),
+    createdAt: _strOrNull(j['createdAt']),
+  );
 }
 
 /// One night on the calendar.
@@ -647,14 +664,14 @@ class CalendarDay {
   bool get isClosed => !onSale;
 
   factory CalendarDay.fromJson(Map<String, dynamic> j) => CalendarDay(
-        date: _str(j['date']),
-        price: _int(j['price']),
-        total: _int(j['total']),
-        held: _int(j['held']),
-        booked: _int(j['booked']),
-        available: _int(j['available']),
-        onSale: _bool(j['onSale']),
-      );
+    date: _str(j['date']),
+    price: _int(j['price']),
+    total: _int(j['total']),
+    held: _int(j['held']),
+    booked: _int(j['booked']),
+    available: _int(j['available']),
+    onSale: _bool(j['onSale']),
+  );
 }
 
 class RoomCalendar {
@@ -664,9 +681,31 @@ class RoomCalendar {
   final List<CalendarDay> days;
 
   factory RoomCalendar.fromJson(Map<String, dynamic> j) => RoomCalendar(
-        roomTypeId: _str(j['roomTypeId']),
-        days: _mapList(j['days']).map(CalendarDay.fromJson).toList(),
-      );
+    roomTypeId: _str(j['roomTypeId']),
+    days: _mapList(j['days']).map(CalendarDay.fromJson).toList(),
+  );
+}
+
+/// `GET /partner/reports/<type>` — one shared envelope shape for all seven
+/// report types. `kpis` and each `breakdown` row carry different fields per
+/// type (see `theme/report_specs.dart`), so they stay raw maps here rather
+/// than typed classes — the spec table is what knows which keys to read.
+class ReportResult {
+  ReportResult(this.raw);
+  final Map<String, dynamic> raw;
+
+  Map<String, dynamic> get _range =>
+      Map<String, dynamic>.from(raw['range'] as Map? ?? const {});
+  String get from => _str(_range['from']);
+  String get to => _str(_range['to']);
+  String get bucket => _str(_range['bucket'], 'day');
+
+  Map<String, dynamic> get kpis =>
+      Map<String, dynamic>.from(raw['kpis'] as Map? ?? const {});
+  List<Map<String, dynamic>> get series => _mapList(raw['series']);
+  List<Map<String, dynamic>> get breakdown => _mapList(raw['breakdown']);
+
+  factory ReportResult.fromJson(Map<String, dynamic> j) => ReportResult(j);
 }
 
 /// One guest ↔ property thread.
@@ -715,19 +754,19 @@ class Conversation {
   bool get isClosed => status == 'closed';
 
   factory Conversation.fromJson(Map<String, dynamic> j) => Conversation(
-        id: _str(j['id']),
-        propertyId: _str(j['propertyId']),
-        property: _str(j['property']),
-        counterpartName: _str(j['counterpartName']),
-        status: _str(j['status'], 'open'),
-        unread: _int(j['unread']),
-        customerId: _strOrNull(j['customerId']),
-        bookingId: _strOrNull(j['bookingId']),
-        bookingCode: _strOrNull(j['bookingCode']),
-        lastMessage: _strOrNull(j['lastMessage']),
-        lastMessageAt: _strOrNull(j['lastMessageAt']),
-        lastMessageMine: _bool(j['lastMessageMine']),
-      );
+    id: _str(j['id']),
+    propertyId: _str(j['propertyId']),
+    property: _str(j['property']),
+    counterpartName: _str(j['counterpartName']),
+    status: _str(j['status'], 'open'),
+    unread: _int(j['unread']),
+    customerId: _strOrNull(j['customerId']),
+    bookingId: _strOrNull(j['bookingId']),
+    bookingCode: _strOrNull(j['bookingCode']),
+    lastMessage: _strOrNull(j['lastMessage']),
+    lastMessageAt: _strOrNull(j['lastMessageAt']),
+    lastMessageMine: _bool(j['lastMessageMine']),
+  );
 }
 
 class ChatMessage {
@@ -762,22 +801,27 @@ class ChatMessage {
   int get seq => int.tryParse(id) ?? 0;
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
-        id: _str(j['id']),
-        senderId: _str(j['senderId']),
-        senderName: _str(j['senderName']),
-        mine: _bool(j['mine']),
-        type: _str(j['type'], 'text'),
-        text: _strOrNull(j['text']),
-        isDeleted: _bool(j['isDeleted']),
-        isEdited: _bool(j['isEdited']),
-        replyToId: _strOrNull(j['replyToId']),
-        createdAt: _strOrNull(j['createdAt']),
-      );
+    id: _str(j['id']),
+    senderId: _str(j['senderId']),
+    senderName: _str(j['senderName']),
+    mine: _bool(j['mine']),
+    type: _str(j['type'], 'text'),
+    text: _strOrNull(j['text']),
+    isDeleted: _bool(j['isDeleted']),
+    isEdited: _bool(j['isEdited']),
+    replyToId: _strOrNull(j['replyToId']),
+    createdAt: _strOrNull(j['createdAt']),
+  );
 }
 
 /// `{items, total, page, limit, pages}` from the backend's `paged()` helper.
 class Paged<T> {
-  Paged({required this.items, required this.total, required this.page, required this.pages});
+  Paged({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.pages,
+  });
 
   final List<T> items;
   final int total;
@@ -786,13 +830,15 @@ class Paged<T> {
 
   bool get hasMore => page < pages;
 
-  factory Paged.fromJson(Map<String, dynamic> j, T Function(Map<String, dynamic>) item) =>
-      Paged(
-        items: _mapList(j['items']).map(item).toList(),
-        total: _int(j['total']),
-        page: _int(j['page'], 1),
-        pages: _int(j['pages'], 1),
-      );
+  factory Paged.fromJson(
+    Map<String, dynamic> j,
+    T Function(Map<String, dynamic>) item,
+  ) => Paged(
+    items: _mapList(j['items']).map(item).toList(),
+    total: _int(j['total']),
+    page: _int(j['page'], 1),
+    pages: _int(j['pages'], 1),
+  );
 }
 
 int intOf(Object? v, [int fallback = 0]) => _int(v, fallback);

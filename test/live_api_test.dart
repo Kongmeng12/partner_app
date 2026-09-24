@@ -154,7 +154,7 @@ void main() {
         reason: 'payout must be total minus commission, exactly');
 
     if (detail.status == 'completed' || detail.status == 'cancelled') {
-      expect(detail.nextStatus, isNull, reason: 'a finished stay has nowhere to go');
+      expect(detail.allowedMoves, isEmpty, reason: 'a finished stay has nowhere to go');
       expect(detail.canCancel, isFalse);
     }
   });

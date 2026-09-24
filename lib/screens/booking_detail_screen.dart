@@ -78,6 +78,107 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   }
 
+  Future<void> _assignRoom(BookingDetail b) async {
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: C.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(R.xl)),
+      ),
+      builder: (_) => _AssignRoomSheet(
+        bookingId: widget.bookingId,
+        roomTypeName: b.roomTypeName,
+        checkInLabel: laoDate(b.checkIn),
+        checkOutLabel: laoDate(b.checkOut),
+      ),
+    );
+  }
+
+  Future<void> _setStatus(String status, String success) => _run(
+        () => ref.read(actionsProvider).setBookingStatus(widget.bookingId, status),
+        success,
+      );
+
+  /// A guest is put in a room when they are checked in — so if no room has
+  /// been assigned and the property has numbered rooms to give, offer to pick
+  /// one first. Never forced: plenty of properties don't number their rooms,
+  /// and a room list that fails to load must not block a guest at the desk.
+  Future<void> _checkIn(BookingDetail b) async {
+    if (b.roomNumbers.isEmpty && b.canAssignRoom) {
+      BookingRoomOptions? options;
+      try {
+        options = await ref.read(bookingRoomOptionsProvider(widget.bookingId).future);
+      } on ApiException {
+        options = null;
+      }
+      if (!mounted) return;
+
+      if (options != null && options.rooms.isNotEmpty) {
+        final assignFirst = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('ຍັງບໍ່ໄດ້ກຳນົດຫ້ອງ'),
+            content: const Text('ກຳນົດເລກຫ້ອງໃຫ້ແຂກກ່ອນເຊັກອິນບໍ?'),
+            actions: [
+              TextButton(onPressed: () => ctx.pop(false), child: const Text('ເຊັກອິນເລີຍ')),
+              FilledButton(onPressed: () => ctx.pop(true), child: const Text('ກຳນົດຫ້ອງ')),
+            ],
+          ),
+        );
+        if (!mounted || assignFirst == null) return;
+        if (assignFirst) {
+          await _assignRoom(b);
+          return;
+        }
+      }
+    }
+    await _setStatus('staying', 'ເຊັກອິນແລ້ວ — ສະຖານະ: ກຳລັງພັກ');
+  }
+
+  Future<void> _checkOut(BookingDetail b) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ເຊັກເອົາ?'),
+        content: const Text(
+          'ແຂກອອກຈາກຫ້ອງແລ້ວ? ການຈອງຈະປິດເປັນ "ສຳເລັດ" ແລະ ແຂກຈະໄດ້ຮັບແຈ້ງເຕືອນໃຫ້ຂຽນຮີວິວ.',
+        ),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('ຍັງບໍ່')),
+          FilledButton(onPressed: () => ctx.pop(true), child: const Text('ເຊັກເອົາ')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _setStatus('completed', 'ເຊັກເອົາແລ້ວ — ສຳເລັດການເຂົ້າພັກ');
+  }
+
+  Future<void> _undoCheckIn(BookingDetail b) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ຍົກເລີກການເຊັກອິນ?'),
+        content: const Text('ການຈອງຈະກັບເປັນ "ຢືນຢັນ" ຄືກັບກ່ອນເຊັກອິນ.'),
+        actions: [
+          TextButton(onPressed: () => ctx.pop(false), child: const Text('ບໍ່')),
+          FilledButton(onPressed: () => ctx.pop(true), child: const Text('ຍົກເລີກເຊັກອິນ')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _setStatus('confirmed', 'ຍົກເລີກການເຊັກອິນແລ້ວ');
+  }
+
+  /// Why check-in is not on offer yet — the API's own window, in plain words.
+  String _checkInHint(BookingDetail b) {
+    final checkIn = parseDay(b.checkIn);
+    if (checkIn != null && todayUtc().isBefore(checkIn)) {
+      return 'ເຊັກອິນໄດ້ຕັ້ງແຕ່ມື້ເຂົ້າພັກ (${laoDate(b.checkIn)})';
+    }
+    return 'ເກີນມື້ອອກແລ້ວ — ລະບົບຈະປິດການເຂົ້າພັກໃຫ້ເອງ';
+  }
+
   /// Opens the thread attached to this booking.
   ///
   /// A partner cannot start one — only a guest can — so if the guest has never
@@ -196,11 +297,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                         ? '${b.roomTypeName} × ${b.roomQuantity}'
                         : b.roomTypeName,
                   ),
-                  if (b.roomNumbers.isNotEmpty)
-                    LabelledRow(
-                      label: 'ເລກຫ້ອງ',
-                      value: b.roomNumbers.join(', '),
-                    ),
+                  _RoomAssignmentRow(
+                    roomNumbers: b.roomNumbers,
+                    editable: b.canAssignRoom,
+                    onTap: () => _assignRoom(b),
+                  ),
                   LabelledRow(label: 'ເຂົ້າພັກ', value: laoDate(b.checkIn), strong: true),
                   LabelledRow(label: 'ອອກ', value: laoDate(b.checkOut), strong: true),
                   LabelledRow(label: 'ຈຳນວນຄືນ', value: '${b.nights} ຄືນ'),
@@ -255,21 +356,44 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
             const SizedBox(height: 20),
 
-            // Only the moves the backend actually allows are offered. It answers
-            // 400 for anything else, so a button for it would be a lie.
-            if (b.nextStatus != null)
-              FilledButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () => _run(
-                          () => ref
-                              .read(actionsProvider)
-                              .setBookingStatus(widget.bookingId, b.nextStatus!),
-                          'ອັບເດດສະຖານະແລ້ວ',
-                        ),
-                icon: const Icon(Icons.check_circle_outline, size: 19),
-                label: Text(b.nextStatusLabel!),
+            // Only the moves the backend says are open today are offered — it
+            // answers 400 for anything else, so a button for it would be a lie.
+            // Status moves by itself where it can: payment confirms the booking,
+            // an expired hold cancels it, and a finished stay is closed out
+            // after check-out. What is left for the front desk is the two
+            // things only a person can know — the guest arrived, the guest left.
+            if (b.awaitingPayment)
+              _StatusNote(
+                icon: Icons.hourglass_top_rounded,
+                text: 'ລໍຖ້າແຂກຈ່າຍເງິນ — ລະບົບຈະຢືນຢັນການຈອງໃຫ້ເອງເມື່ອໄດ້ຮັບເງິນ',
               ),
+
+            if (b.status == 'confirmed')
+              b.canCheckIn
+                  ? FilledButton.icon(
+                      onPressed: _busy ? null : () => _checkIn(b),
+                      icon: const Icon(Icons.login_rounded, size: 19),
+                      label: const Text('ເຊັກອິນ (ແຂກມາຮອດ)'),
+                    )
+                  : _StatusNote(
+                      icon: Icons.event_available_outlined,
+                      text: _checkInHint(b),
+                    ),
+
+            if (b.canCheckOut)
+              FilledButton.icon(
+                onPressed: _busy ? null : () => _checkOut(b),
+                icon: const Icon(Icons.logout_rounded, size: 19),
+                label: const Text('ເຊັກເອົາ (ແຂກອອກແລ້ວ)'),
+              ),
+
+            if (b.canUndoCheckIn) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: _busy ? null : () => _undoCheckIn(b),
+                child: const Text('ກົດເຊັກອິນຜິດ? ຍົກເລີກການເຊັກອິນ'),
+              ),
+            ],
 
             if (b.canCancel) ...[
               const SizedBox(height: 10),
@@ -283,6 +407,402 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 label: const Text('ຍົກເລີກການຈອງ'),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A quiet line explaining why there is no button — an empty gap where an
+/// action might be reads as a bug, so say what the system is doing instead.
+class _StatusNote extends StatelessWidget {
+  const _StatusNote({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: C.infoBg,
+          borderRadius: BorderRadius.circular(R.md),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: C.infoFg),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(fontSize: 13, color: C.infoFg, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The one editable fact in the stay card — every other row here is a record
+/// of what happened; this one is a decision the property can make or revisit
+/// any time before the stay ends. Unassigned is drawn as a gap worth closing,
+/// not a blank worth ignoring, since most bookings start here and would stay
+/// here forever if the row only ever displayed and never invited action.
+class _RoomAssignmentRow extends StatelessWidget {
+  const _RoomAssignmentRow({
+    required this.roomNumbers,
+    required this.editable,
+    required this.onTap,
+  });
+
+  final List<String> roomNumbers;
+  final bool editable;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final assigned = roomNumbers.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 118,
+            child: Text('ເລກຫ້ອງ', style: TextStyle(fontSize: 13, color: C.muted)),
+          ),
+          Expanded(
+            child: assigned
+                ? Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final number in roomNumbers)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: C.accentSoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            number,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: C.accentDark,
+                            ),
+                          ),
+                        ),
+                      if (editable)
+                        InkWell(
+                          onTap: onTap,
+                          borderRadius: BorderRadius.circular(6),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.edit_outlined, size: 15, color: C.muted),
+                          ),
+                        ),
+                    ],
+                  )
+                : editable
+                    ? InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(R.md),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: C.accent),
+                            borderRadius: BorderRadius.circular(R.md),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_circle_outline, size: 15, color: C.accentDark),
+                              SizedBox(width: 5),
+                              Text(
+                                'ກຳນົດຫ້ອງ',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: C.accentDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const Text('ຍັງບໍ່ໄດ້ກຳນົດ', style: TextStyle(fontSize: 13.5, color: C.faint)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Picks which physical room(s) a booking holds. Same floor-grouped reading
+/// order as room-type management (`groupRoomsByFloor`), but every tile here
+/// is chosen from rather than edited — the list only ever contains rooms
+/// already free for this stay's dates, so nothing inside it needs its own
+/// "unavailable" state; the only real choice besides which room is whether to
+/// pick one at all.
+class _AssignRoomSheet extends ConsumerStatefulWidget {
+  const _AssignRoomSheet({
+    required this.bookingId,
+    required this.roomTypeName,
+    required this.checkInLabel,
+    required this.checkOutLabel,
+  });
+
+  final String bookingId;
+  final String roomTypeName;
+  final String checkInLabel;
+  final String checkOutLabel;
+
+  @override
+  ConsumerState<_AssignRoomSheet> createState() => _AssignRoomSheetState();
+}
+
+class _AssignRoomSheetState extends ConsumerState<_AssignRoomSheet> {
+  /// Null until the fetch resolves and seeds it from what the booking already
+  /// holds — an empty (non-null) set from then on means "no room," a real
+  /// choice this sheet lets a partner make deliberately, not just an
+  /// unanswered question.
+  Set<String>? _selected;
+  bool _busy = false;
+
+  void _seedIfNeeded(BookingRoomOptions options) {
+    _selected ??= options.currentRoomIds.toSet();
+  }
+
+  void _toggle(String roomId, int quantity) {
+    setState(() {
+      final selected = _selected!;
+      if (selected.contains(roomId)) {
+        selected.remove(roomId);
+        return;
+      }
+      // Picking a room while at capacity replaces the whole selection when
+      // there is only one slot (the overwhelming common case) rather than
+      // silently refusing the tap — a partner correcting a mistaken pick
+      // should not have to deselect first to select the right room.
+      if (quantity == 1) selected.clear();
+      if (selected.length < quantity) selected.add(roomId);
+    });
+  }
+
+  void _pickNoRoom() => setState(() => _selected = {});
+
+  Future<void> _save() async {
+    final selected = _selected;
+    if (selected == null) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref.read(actionsProvider).assignRoom(widget.bookingId, selected.toList());
+      if (mounted) {
+        Navigator.of(context).pop(true);
+        showMessage(context, selected.isEmpty ? 'ຍົກເລີກການກຳນົດຫ້ອງແລ້ວ' : 'ກຳນົດຫ້ອງແລ້ວ');
+      }
+    } on ApiException catch (e) {
+      if (mounted) showMessage(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = ref.watch(bookingRoomOptionsProvider(widget.bookingId));
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.82),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('ກຳນົດຫ້ອງ', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              '${widget.roomTypeName} · ${widget.checkInLabel} – ${widget.checkOutLabel}',
+              style: const TextStyle(fontSize: 13, color: C.muted),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: options.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: C.accent)),
+                ),
+                error: (e, _) => ErrorRetry(
+                  error: e,
+                  onRetry: () => ref.invalidate(bookingRoomOptionsProvider(widget.bookingId)),
+                ),
+                data: (opts) {
+                  _seedIfNeeded(opts);
+                  final selected = _selected!;
+                  final floors = groupRoomsByFloor(opts.rooms);
+                  final noRoomPicked = selected.isEmpty;
+
+                  return SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (opts.quantity > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              'ເລືອກແລ້ວ ${selected.length}/${opts.quantity} ຫ້ອງ',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: C.soft,
+                              ),
+                            ),
+                          ),
+                        InkWell(
+                          onTap: _pickNoRoom,
+                          borderRadius: BorderRadius.circular(R.md),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: noRoomPicked ? C.accentSoft : C.bg,
+                              borderRadius: BorderRadius.circular(R.md),
+                              border: Border.all(color: noRoomPicked ? C.accent : C.border),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  noRoomPicked ? Icons.radio_button_checked : Icons.radio_button_off,
+                                  size: 18,
+                                  color: noRoomPicked ? C.accentDark : C.muted,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'ບໍ່ກຳນົດຫ້ອງ · ໃຫ້ທີ່ພັກເລືອກທີຫຼັງ',
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: noRoomPicked ? C.accentDark : C.soft,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (opts.rooms.isEmpty)
+                          const EmptyState(
+                            message: 'ບໍ່ມີຫ້ອງວ່າງໃນຊ່ວງວັນທີ່ນີ້\nໄປຕັ້ງເລກຫ້ອງກ່ອນທີ່ໜ້າ "ຫ້ອງ"',
+                            icon: Icons.meeting_room_outlined,
+                          )
+                        else
+                          for (final floor in floors) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                floor.label.isEmpty ? 'ບໍ່ໄດ້ລະບຸຊັ້ນ' : 'ຊັ້ນ ${floor.label}',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: C.muted,
+                                ),
+                              ),
+                            ),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                for (final room in floor.rooms)
+                                  _SelectableRoomTile(
+                                    room: room,
+                                    selected: selected.contains(room.id),
+                                    onTap: () => _toggle(room.id, opts.quantity),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                          ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: (_busy || _selected == null) ? null : _save,
+              child: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('ບັນທຶກ'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One free room as a tappable chip — filled accent with a check mark when
+/// picked, a plain bordered surface otherwise. No status pill here unlike the
+/// room-management tiles: everything in this list already passed the
+/// availability check, so the only state left to show is "chosen or not."
+class _SelectableRoomTile extends StatelessWidget {
+  const _SelectableRoomTile({required this.room, required this.selected, required this.onTap});
+
+  final RoomUnit room;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(R.md),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 78,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? C.accent : C.surface,
+          borderRadius: BorderRadius.circular(R.md),
+          border: Border.all(color: selected ? C.accent : C.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              room.roomNumber,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: selected ? Colors.white : C.text,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 13,
+              color: selected ? Colors.white : C.border,
+            ),
           ],
         ),
       ),

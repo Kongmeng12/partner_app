@@ -19,6 +19,12 @@ dependencies:
   intl: ^0.20.2
   image_picker: ^1.2.1
   cached_network_image: ^3.4.1
+  fl_chart: ^0.69.0
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  csv: ^6.0.0
+  share_plus: ^10.1.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

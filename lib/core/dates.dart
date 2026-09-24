@@ -17,13 +17,22 @@
 library;
 
 const _laoMonthsShort = [
-  'ມ.ກ.', 'ກ.ພ.', 'ມີ.ນ.', 'ມ.ສ.', 'ພ.ພ.', 'ມິ.ຖ.',
-  'ກ.ຄ.', 'ສ.ຫ.', 'ກ.ຍ.', 'ຕ.ລ.', 'ພ.ຈ.', 'ທ.ວ.',
+  'ມັງກອນ.',
+  'ກຸມພາ.',
+  'ມີນາ.',
+  'ເມສາ.',
+  'ພຶດສະພາ.',
+  'ມິຖຸນາ.',
+  'ກໍລະກົດ.',
+  'ສິງຫາ.',
+  'ກັນຍາ.',
+  'ຕຸລາ.',
+  'ພະຈິກ.',
+  'ທັນວາ.',
 ];
 
 /// True when the value is a date-only column rendered as UTC midnight.
-bool isDateOnly(String value) =>
-    RegExp(r'T00:00:00(\.000)?Z$').hasMatch(value);
+bool isDateOnly(String value) => RegExp(r'T00:00:00(\.000)?Z$').hasMatch(value);
 
 /// Parses an API string into the calendar day it denotes.
 ///
@@ -69,7 +78,8 @@ String laoDateRange(Object? from, Object? to) {
 /// `13 ສ.ຫ. 2026 · 14:30` — a real timestamp, in the reader's own clock.
 String laoDateTime(Object? value) {
   if (value == null) return '—';
-  final parsed = value is DateTime ? value : DateTime.tryParse(value.toString());
+  final parsed =
+      value is DateTime ? value : DateTime.tryParse(value.toString());
   if (parsed == null) return '—';
   final d = parsed.toLocal();
   final hh = d.hour.toString().padLeft(2, '0');
@@ -81,7 +91,8 @@ String laoDateTime(Object? value) {
 /// obvious from where the message sits in the thread.
 String laoTime(Object? value) {
   if (value == null) return '';
-  final parsed = value is DateTime ? value : DateTime.tryParse(value.toString());
+  final parsed =
+      value is DateTime ? value : DateTime.tryParse(value.toString());
   if (parsed == null) return '';
   final d = parsed.toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
@@ -90,7 +101,8 @@ String laoTime(Object? value) {
 /// `10 ນາທີທີ່ແລ້ວ`
 String laoAgo(Object? value) {
   if (value == null) return '—';
-  final parsed = value is DateTime ? value : DateTime.tryParse(value.toString());
+  final parsed =
+      value is DateTime ? value : DateTime.tryParse(value.toString());
   if (parsed == null) return '—';
 
   final secs = DateTime.now().difference(parsed.toLocal()).inSeconds;
@@ -128,4 +140,52 @@ int nightsBetween(Object? checkIn, Object? checkOut) {
 }
 
 /// Lao weekday initials for the calendar header, starting Monday.
-const laoWeekdaysShort = ['ຈ', 'ອ', 'ພ', 'ພຫ', 'ສຸ', 'ສ', 'ອາ'];
+const laoWeekdaysShort = [
+  'ຈັນ',
+  'ອັງຄານ',
+  'ພຸດ',
+  'ພະຫັດ',
+  'ສຸກ',
+  'ເສົາ',
+  'ອາທິດ',
+];
+
+/// Every calendar day between two `YYYY-MM-DD` strings, inclusive, in either
+/// order. Used by the pricing calendar's long-press-then-tap range selection
+/// and by the reports date-range sheet's day-count caption.
+List<String> isosBetween(String a, String b) {
+  final start = DateTime.parse('${a}T00:00:00.000Z');
+  final end = DateTime.parse('${b}T00:00:00.000Z');
+  final from = start.isBefore(end) ? start : end;
+  final to = start.isBefore(end) ? end : start;
+
+  final isos = <String>[];
+  for (var d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+    isos.add(apiDay(d));
+  }
+  return isos;
+}
+
+const _laoMonthsLong = [
+  'ມັງກອນ',
+  'ກຸມພາ',
+  'ມີນາ',
+  'ເມສາ',
+  'ພຶດສະພາ',
+  'ມິຖຸນາ',
+  'ກໍລະກົດ',
+  'ສິງຫາ',
+  'ກັນຍາ',
+  'ຕຸລາ',
+  'ພະຈິກ',
+  'ທັນວາ',
+];
+
+/// `ກັນຍາ 2026`
+String laoMonthYear(DateTime day) =>
+    '${_laoMonthsLong[day.month - 1]} ${day.year}';
+
+/// `ພຸດ 24 ກັນຍາ 2026` — the weekday matters on the day screen, where a host is
+/// deciding what to do about *that* day.
+String laoFullDate(DateTime day) =>
+    '${laoWeekdaysShort[day.weekday - 1]} ${day.day} ${_laoMonthsLong[day.month - 1]} ${day.year}';

@@ -36,8 +36,15 @@ flutter run
 
 | ອີເມວ | ລະຫັດຜ່ານ | ສະຖານະ |
 |---|---|---|
-| `vintage@laostay.la` | `Partner@2026` | verified |
+| `` | `Partner@2026` | verified |
 | `homsabay@laostay.la` | `Partner@2026` | verified |
+
+
+ที่พัก	Email	รหัสผ่าน
+Vang Vieng Riverside	vangvieng@laostay.la	Partner@2026
+Mekong View Resort	mekongview@laostay.la	Partner@2026
+Dokchampa Homestay	newapplicant@laostay.la	Partner@2026
+
 
 ສະໝັກໃໝ່ຜ່ານໜ້າ "ສະໝັກເປັນ Partner" ຈະໄດ້ບັນຊີ `pending` —
 ອະນຸມັດຢູ່ WebAdmin ໜ້າ *ອະນຸມັດ Partner* ແລ້ວກົດ "ກວດສະຖານະອີກຄັ້ງ" ໃນແອັບ.
@@ -125,7 +132,7 @@ lib/
 - **ຄັງຫ້ອງເປັນຕົວເລກ ບໍ່ແມ່ນ ຈອງ/ວ່າງ** — ຫ້ອງແບບໜຶ່ງມີຫຼາຍຫ້ອງ ຄືນທີ່ຂາຍໄປ 2 ຈາກ 8
   ຍັງຂາຍໄດ້ ແລະ ຍັງແກ້ລາຄາໄດ້. ປະຕິທິນຈຶ່ງເລືອກໄດ້ທຸກຄືນ ແລະ ສະແດງ `3/8`
 - **ລາຄາ ກັບ ເປີດ/ປິດ ຢູ່ຄົນລະ endpoint** — `room_prices` ກັບ `room_inventory`
-  ແຍກກັນ ເພື່ອໃຫ້ປິດຄືນໃດຄືນໜຶ່ງບໍ່ໄປແຕະລາຄາທີ່ມັນຈະເປີດຄືນ
+  ແຍກກັນ ເພື່ອໃຫ້ປິດຄືນໃດຄືນໜຶ່ງບໍ່ໄປແຕະລາຄາທີ່ມັນຈະເປີດຄືນvintage@laostay.la
 #   p a r t n e r _ a p p 
  
  

@@ -9,11 +9,15 @@ import 'screens/booking_detail_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/day_detail_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/payouts_screen.dart';
+import 'screens/pricing_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/properties_screen.dart';
+import 'screens/report_detail_screen.dart';
+import 'screens/reports_hub_screen.dart';
 import 'screens/reviews_screen.dart';
 import 'screens/shell.dart';
 import 'screens/walk_in_screen.dart';
@@ -62,7 +66,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           return path == '/pending' ? null : '/pending';
 
         case AuthStage.signedIn:
-          if (onAuthRoute || path == '/pending' || path == '/splash') return '/';
+          if (onAuthRoute || path == '/pending' || path == '/splash')
+            return '/';
           return null;
       }
     },
@@ -70,12 +75,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
-      GoRoute(path: '/pending', builder: (_, __) => const PendingApprovalScreen()),
+      GoRoute(
+        path: '/pending',
+        builder: (_, __) => const PendingApprovalScreen(),
+      ),
 
       // The five bottom-nav destinations share one scaffold so the bar does not
       // rebuild — and each keeps its own navigation stack.
       StatefulShellRoute.indexedStack(
-        builder: (_, __, navigationShell) => PartnerShell(navigationShell: navigationShell),
+        builder:
+            (_, __, navigationShell) =>
+                PartnerShell(navigationShell: navigationShell),
         branches: [
           StatefulShellBranch(
             routes: [
@@ -83,7 +93,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/',
                 builder: (_, __) => const DashboardScreen(),
                 routes: [
-                  GoRoute(path: 'notifications', builder: (_, __) => const NotificationsScreen()),
+                  GoRoute(
+                    path: 'notifications',
+                    builder: (_, __) => const NotificationsScreen(),
+                  ),
                 ],
               ),
             ],
@@ -94,19 +107,49 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/bookings',
                 builder: (_, __) => const BookingsScreen(),
                 routes: [
-                  GoRoute(path: 'walk-in', builder: (_, __) => const WalkInScreen()),
+                  GoRoute(
+                    path: 'walk-in',
+                    // Prefilled when opened from an empty room on the Calendar.
+                    builder:
+                        (_, s) => WalkInScreen(
+                          roomTypeId: s.uri.queryParameters['roomTypeId'],
+                          date: s.uri.queryParameters['date'],
+                          roomId: s.uri.queryParameters['roomId'],
+                          roomNumber: s.uri.queryParameters['roomNumber'],
+                        ),
+                  ),
                   // No chat route under a booking: conversations are keyed by
                   // conversation, not booking, and only a guest can open one.
                   GoRoute(
                     path: ':id',
-                    builder: (_, s) => BookingDetailScreen(bookingId: s.pathParameters['id']!),
+                    builder:
+                        (_, s) => BookingDetailScreen(
+                          bookingId: s.pathParameters['id']!,
+                        ),
                   ),
                 ],
               ),
             ],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/calendar', builder: (_, __) => const CalendarScreen())],
+            routes: [
+              GoRoute(
+                path: '/calendar',
+                builder: (_, __) => const CalendarScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'pricing',
+                    builder: (_, __) => const PricingScreen(),
+                  ),
+                  GoRoute(
+                    path: 'day/:date',
+                    builder:
+                        (_, s) =>
+                            DayDetailScreen(date: s.pathParameters['date']!),
+                  ),
+                ],
+              ),
+            ],
           ),
           StatefulShellBranch(
             routes: [
@@ -116,8 +159,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: ':id',
-                    builder: (_, s) =>
-                        ChatScreen(conversationId: s.pathParameters['id']!),
+                    builder:
+                        (_, s) =>
+                            ChatScreen(conversationId: s.pathParameters['id']!),
                   ),
                 ],
               ),
@@ -129,10 +173,35 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/more',
                 builder: (_, __) => const MoreScreen(),
                 routes: [
-                  GoRoute(path: 'properties', builder: (_, __) => const PropertiesScreen()),
-                  GoRoute(path: 'payouts', builder: (_, __) => const PayoutsScreen()),
-                  GoRoute(path: 'reviews', builder: (_, __) => const ReviewsScreen()),
-                  GoRoute(path: 'profile', builder: (_, __) => const ProfileScreen()),
+                  GoRoute(
+                    path: 'properties',
+                    builder: (_, __) => const PropertiesScreen(),
+                  ),
+                  GoRoute(
+                    path: 'payouts',
+                    builder: (_, __) => const PayoutsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'reviews',
+                    builder: (_, __) => const ReviewsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'reports',
+                    builder: (_, __) => const ReportsHubScreen(),
+                    routes: [
+                      GoRoute(
+                        path: ':type',
+                        builder:
+                            (_, s) => ReportDetailScreen(
+                              typePath: s.pathParameters['type']!,
+                            ),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'profile',
+                    builder: (_, __) => const ProfileScreen(),
+                  ),
                 ],
               ),
             ],
@@ -140,9 +209,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
     ],
-    errorBuilder: (_, state) => Scaffold(
-      appBar: AppBar(title: const Text('ບໍ່ພົບໜ້ານີ້')),
-      body: Center(child: Text('ບໍ່ພົບເສັ້ນທາງ ${state.uri}')),
-    ),
+    errorBuilder:
+        (_, state) => Scaffold(
+          appBar: AppBar(title: const Text('ບໍ່ພົບໜ້ານີ້')),
+          body: Center(child: Text('ບໍ່ພົບເສັ້ນທາງ ${state.uri}')),
+        ),
   );
 });

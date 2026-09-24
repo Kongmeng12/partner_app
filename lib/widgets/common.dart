@@ -389,6 +389,41 @@ void showMessage(BuildContext context, String message, {bool error = false}) {
     );
 }
 
+/// A pill-shaped tap target for a quick bulk action or preset — "select all",
+/// "this month" — distinct from [FilterChips]' selected/unselected toggle
+/// chips: a `QuickChip` fires an action rather than holding a selection state.
+class QuickChip extends StatelessWidget {
+  const QuickChip({super.key, required this.label, required this.onTap, this.selected = false});
+
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? C.accentSoft : C.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? C.accent : C.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: selected ? C.accentDark : C.soft,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A horizontal row of filter chips.
 class FilterChips extends StatelessWidget {
   const FilterChips({

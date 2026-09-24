@@ -46,8 +46,12 @@ class BookingsScreen extends ConsumerWidget {
               ('pending', label('ລໍຖ້າ', 'pending')),
               ('confirmed', label('ຢືນຢັນ', 'confirmed')),
               ('staying', label('ກຳລັງພັກ', 'staying')),
-              ('done', label('ສຳເລັດ', 'done')),
+              // `completed` is the API's word for a finished stay — the v1
+              // `done` this chip used to send is not a status any more, so the
+              // list answered 400 and the count never matched.
+              ('completed', label('ສຳເລັດ', 'completed')),
               ('cancelled', label('ຍົກເລີກ', 'cancelled')),
+              if ((counts['no_show'] ?? 0) > 0) ('no_show', label('ບໍ່ມາ', 'no_show')),
             ],
           ),
           const SizedBox(height: 4),

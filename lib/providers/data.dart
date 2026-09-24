@@ -7,6 +7,7 @@ import '../core/api_client.dart';
 import '../core/config.dart';
 import '../core/dates.dart';
 import '../models/models.dart';
+import '../theme/report_specs.dart';
 import 'auth.dart';
 
 /// Server state.
@@ -28,8 +29,12 @@ typedef BulkRoomResult = ({List<RoomUnit> created, Map<String, String> failed});
 
 // ── dashboard ───────────────────────────────────────────────────────────────
 
-final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/dashboard');
+final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((
+  ref,
+) async {
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/dashboard');
   return PartnerDashboard(Map<String, dynamic>.from(data as Map));
 });
 
@@ -40,12 +45,17 @@ final dashboardProvider = FutureProvider.autoDispose<PartnerDashboard>((ref) asy
 /// Both endpoints are public, which matters: this runs before the applicant
 /// has an account, so there is no token to send.
 final provincesProvider = FutureProvider<List<Province>>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/locations/provinces');
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/locations/provinces');
   return mapListOf(data).map(Province.fromJson).toList()
     ..sort((a, b) => a.name.compareTo(b.name));
 });
 
-final districtsProvider = FutureProvider.family<List<District>, String>((ref, provinceId) async {
+final districtsProvider = FutureProvider.family<List<District>, String>((
+  ref,
+  provinceId,
+) async {
   if (provinceId.isEmpty) return const [];
   final data = await ref
       .watch(apiClientProvider)
@@ -56,7 +66,9 @@ final districtsProvider = FutureProvider.family<List<District>, String>((ref, pr
 // ── properties and room types ───────────────────────────────────────────────
 
 final propertiesProvider = FutureProvider<List<Property>>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/properties');
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/properties');
   return mapListOf(data).map(Property.fromJson).toList();
 });
 
@@ -64,7 +76,9 @@ typedef PropertyRoomType = ({Property property, RoomType roomType});
 
 /// Every active room type the partner owns, flattened — the calendar and the
 /// walk-in form both need the list without caring which property it sits on.
-final allRoomTypesProvider = FutureProvider<List<PropertyRoomType>>((ref) async {
+final allRoomTypesProvider = FutureProvider<List<PropertyRoomType>>((
+  ref,
+) async {
   final properties = await ref.watch(propertiesProvider.future);
   return [
     for (final p in properties)
@@ -76,8 +90,9 @@ final allRoomTypesProvider = FutureProvider<List<PropertyRoomType>>((ref) async 
 // ── bookings ────────────────────────────────────────────────────────────────
 
 /// Which status chip the bookings list is filtered by. Null means all.
-final bookingFilterProvider =
-    NotifierProvider<BookingFilter, String?>(BookingFilter.new);
+final bookingFilterProvider = NotifierProvider<BookingFilter, String?>(
+  BookingFilter.new,
+);
 
 class BookingFilter extends Notifier<String?> {
   @override
@@ -86,37 +101,63 @@ class BookingFilter extends Notifier<String?> {
   void set(String? status) => state = status;
 }
 
-final bookingsProvider = FutureProvider.autoDispose<Paged<BookingSummary>>((ref) async {
+final bookingsProvider = FutureProvider.autoDispose<Paged<BookingSummary>>((
+  ref,
+) async {
   final status = ref.watch(bookingFilterProvider);
-  final data = await ref.watch(apiClientProvider).get<dynamic>(
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>(
         '/partner/bookings',
         query: {'limit': 50, if (status != null) 'status': status},
       );
-  return Paged.fromJson(Map<String, dynamic>.from(data as Map), BookingSummary.fromJson);
+  return Paged.fromJson(
+    Map<String, dynamic>.from(data as Map),
+    BookingSummary.fromJson,
+  );
 });
 
-final bookingCountsProvider = FutureProvider.autoDispose<Map<String, int>>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/bookings/status-counts');
-  return Map<String, dynamic>.from(data as Map).map((k, v) => MapEntry(k, intOf(v)));
+final bookingCountsProvider = FutureProvider.autoDispose<Map<String, int>>((
+  ref,
+) async {
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/bookings/status-counts');
+  return Map<String, dynamic>.from(
+    data as Map,
+  ).map((k, v) => MapEntry(k, intOf(v)));
 });
 
-final bookingDetailProvider =
-    FutureProvider.autoDispose.family<BookingDetail, String>((ref, id) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/bookings/$id');
-  return BookingDetail(Map<String, dynamic>.from(data as Map));
-});
+final bookingDetailProvider = FutureProvider.autoDispose
+    .family<BookingDetail, String>((ref, id) async {
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>('/partner/bookings/$id');
+      return BookingDetail(Map<String, dynamic>.from(data as Map));
+    });
+
+/// The room-picker list for the "assign a room" sheet on a booking's detail
+/// screen — fetched fresh each time the sheet opens, not kept warm, since a
+/// room someone else grabbed a minute ago must not still look free.
+final bookingRoomOptionsProvider = FutureProvider.autoDispose
+    .family<BookingRoomOptions, String>((ref, bookingId) async {
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>('/partner/bookings/$bookingId/available-rooms');
+      return BookingRoomOptions.fromJson(
+        Map<String, dynamic>.from(data as Map),
+      );
+    });
 
 // ── payouts and reviews ─────────────────────────────────────────────────────
 
-typedef PayoutSummary = ({
-  List<Payout> items,
-  int pendingCount,
-  int pendingTotal,
-  int paidTotal,
-});
+typedef PayoutSummary =
+    ({List<Payout> items, int pendingCount, int pendingTotal, int paidTotal});
 
 final payoutsProvider = FutureProvider.autoDispose<PayoutSummary>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/payouts');
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/payouts');
   final j = Map<String, dynamic>.from(data as Map);
   return (
     items: mapListOf(j['items']).map(Payout.fromJson).toList(),
@@ -128,16 +169,20 @@ final payoutsProvider = FutureProvider.autoDispose<PayoutSummary>((ref) async {
 
 /// The bookings behind one payout — the reconciliation view. Every payout row
 /// must equal the sum of these, which is a database CHECK, not a hope.
-final payoutItemsProvider =
-    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/payouts/$id/items');
-  return mapListOf(Map<String, dynamic>.from(data as Map)['items']);
-});
+final payoutItemsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, id) async {
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>('/partner/payouts/$id/items');
+      return mapListOf(Map<String, dynamic>.from(data as Map)['items']);
+    });
 
 typedef ReviewSummary = ({List<Review> items, int total, double? averageStars});
 
 final reviewsProvider = FutureProvider.autoDispose<ReviewSummary>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/reviews');
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/reviews');
   final j = Map<String, dynamic>.from(data as Map);
   final avg = j['averageStars'];
   return (
@@ -151,8 +196,12 @@ final reviewsProvider = FutureProvider.autoDispose<ReviewSummary>((ref) async {
 
 typedef NotificationFeed = ({List<AppNotification> items, int unread});
 
-final notificationsProvider = FutureProvider.autoDispose<NotificationFeed>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/notifications');
+final notificationsProvider = FutureProvider.autoDispose<NotificationFeed>((
+  ref,
+) async {
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/notifications');
   final j = Map<String, dynamic>.from(data as Map);
   return (
     items: mapListOf(j['items']).map(AppNotification.fromJson).toList(),
@@ -164,8 +213,12 @@ final notificationsProvider = FutureProvider.autoDispose<NotificationFeed>((ref)
 
 typedef ConversationList = ({List<Conversation> items, int unreadTotal});
 
-final conversationsProvider = FutureProvider.autoDispose<ConversationList>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/conversations');
+final conversationsProvider = FutureProvider.autoDispose<ConversationList>((
+  ref,
+) async {
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/conversations');
   final j = Map<String, dynamic>.from(data as Map);
   return (
     items: mapListOf(j['items']).map(Conversation.fromJson).toList(),
@@ -175,7 +228,9 @@ final conversationsProvider = FutureProvider.autoDispose<ConversationList>((ref)
 
 /// The badge on the chat tab. Cheap enough to poll while the app is open.
 final unreadChatProvider = FutureProvider.autoDispose<int>((ref) async {
-  final data = await ref.watch(apiClientProvider).get<dynamic>('/partner/conversations/unread');
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>('/partner/conversations/unread');
   return intOf(Map<String, dynamic>.from(data as Map)['total']);
 });
 
@@ -185,10 +240,8 @@ final unreadChatProvider = FutureProvider.autoDispose<int>((ref) async {
 /// in the same millisecond would make a time cursor either skip one or repeat
 /// it. Only messages past the cursor come back, so a long conversation is
 /// fetched once and then extended a few rows at a time.
-final chatProvider =
-    AsyncNotifierProvider.autoDispose.family<ChatNotifier, List<ChatMessage>, String>(
-  ChatNotifier.new,
-);
+final chatProvider = AsyncNotifierProvider.autoDispose
+    .family<ChatNotifier, List<ChatMessage>, String>(ChatNotifier.new);
 
 class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
   ChatNotifier(this.conversationId);
@@ -250,7 +303,9 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
   }
 
   Future<void> deleteMessage(String messageId) async {
-    await _api.delete<dynamic>('/partner/conversations/$conversationId/messages/$messageId');
+    await _api.delete<dynamic>(
+      '/partner/conversations/$conversationId/messages/$messageId',
+    );
     state = AsyncData([
       for (final m in state.value ?? const <ChatMessage>[])
         if (m.id == messageId)
@@ -286,8 +341,9 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
 // ── calendar ────────────────────────────────────────────────────────────────
 
 /// Which room type the calendar screen is showing.
-final selectedRoomTypeProvider =
-    NotifierProvider<SelectedRoomType, String?>(SelectedRoomType.new);
+final selectedRoomTypeProvider = NotifierProvider<SelectedRoomType, String?>(
+  SelectedRoomType.new,
+);
 
 class SelectedRoomType extends Notifier<String?> {
   @override
@@ -297,8 +353,9 @@ class SelectedRoomType extends Notifier<String?> {
 }
 
 /// The month the calendar is scrolled to, as UTC midnight on the 1st.
-final calendarMonthProvider =
-    NotifierProvider<CalendarMonth, DateTime>(CalendarMonth.new);
+final calendarMonthProvider = NotifierProvider<CalendarMonth, DateTime>(
+  CalendarMonth.new,
+);
 
 class CalendarMonth extends Notifier<DateTime> {
   @override
@@ -313,17 +370,158 @@ class CalendarMonth extends Notifier<DateTime> {
 
 typedef CalendarKey = ({String roomTypeId, DateTime month});
 
-final roomCalendarProvider =
-    FutureProvider.autoDispose.family<RoomCalendar, CalendarKey>((ref, key) async {
-  final from = DateTime.utc(key.month.year, key.month.month, 1);
-  final to = DateTime.utc(key.month.year, key.month.month + 1, 1);
+final roomCalendarProvider = FutureProvider.autoDispose
+    .family<RoomCalendar, CalendarKey>((ref, key) async {
+      final from = DateTime.utc(key.month.year, key.month.month, 1);
+      final to = DateTime.utc(key.month.year, key.month.month + 1, 1);
 
-  final data = await ref.watch(apiClientProvider).get<dynamic>(
-        '/partner/room-types/${key.roomTypeId}/calendar',
-        query: {'from': apiDay(from), 'to': apiDay(to)},
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>(
+            '/partner/room-types/${key.roomTypeId}/calendar',
+            query: {'from': apiDay(from), 'to': apiDay(to)},
+          );
+      return RoomCalendar.fromJson(Map<String, dynamic>.from(data as Map));
+    });
+
+// ── calendar: month grid & day detail ───────────────────────────────────────
+
+/// Which property the Calendar is showing. Rooms belong to one property — a
+/// floor plan does not span buildings — so unlike the pricing screen (which
+/// lists room types across every property) this is a single selection. Null
+/// means the first property until a partner who owns several picks another.
+final selectedPropertyProvider = NotifierProvider<SelectedProperty, String?>(
+  SelectedProperty.new,
+);
+
+class SelectedProperty extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? propertyId) => state = propertyId;
+}
+
+/// The month the Calendar is scrolled to, as UTC midnight on the 1st.
+final occupancyMonthProvider = NotifierProvider<OccupancyMonth, DateTime>(
+  OccupancyMonth.new,
+);
+
+class OccupancyMonth extends Notifier<DateTime> {
+  @override
+  DateTime build() {
+    final t = todayUtc();
+    return DateTime.utc(t.year, t.month, 1);
+  }
+
+  void set(DateTime month) => state = DateTime.utc(month.year, month.month, 1);
+  void shift(int months) =>
+      state = DateTime.utc(state.year, state.month + months, 1);
+}
+
+typedef MonthKey = ({String propertyId, DateTime month});
+
+/// Every day of one month, for the grid: how full it is, arrivals, departures.
+final monthSummaryProvider = FutureProvider.autoDispose
+    .family<List<CalendarMonthDay>, MonthKey>((ref, key) async {
+      final from = DateTime.utc(key.month.year, key.month.month, 1);
+      final to = DateTime.utc(key.month.year, key.month.month + 1, 1);
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>(
+            '/partner/properties/${key.propertyId}/calendar-month',
+            query: {'from': apiDay(from), 'to': apiDay(to)},
+          );
+      return mapListOf(
+        Map<String, dynamic>.from(data as Map)['days'],
+      ).map(CalendarMonthDay.fromJson).toList();
+    });
+
+typedef BoardKey = ({String propertyId, DateTime date});
+
+/// One day, room type by room type and room by room.
+final dayBoardProvider = FutureProvider.autoDispose.family<DayBoard, BoardKey>((
+  ref,
+  key,
+) async {
+  final data = await ref
+      .watch(apiClientProvider)
+      .get<dynamic>(
+        '/partner/properties/${key.propertyId}/board',
+        query: {'date': apiDay(key.date)},
       );
-  return RoomCalendar.fromJson(Map<String, dynamic>.from(data as Map));
+  return DayBoard.fromJson(Map<String, dynamic>.from(data as Map));
 });
+
+// ── reports ─────────────────────────────────────────────────────────────────
+
+/// The date range every report screen shares — switching between reports
+/// keeps the range instead of re-asking, per the hub's persistent context bar.
+/// Defaults to the trailing 7 days, the same window `/partner/dashboard`
+/// already shows, so the hub opens on numbers the partner has already seen.
+final reportRangeProvider =
+    NotifierProvider<ReportRangeNotifier, ({DateTime from, DateTime to})>(
+      ReportRangeNotifier.new,
+    );
+
+class ReportRangeNotifier extends Notifier<({DateTime from, DateTime to})> {
+  @override
+  ({DateTime from, DateTime to}) build() {
+    final today = todayUtc();
+    return (from: addDays(today, -6), to: addDays(today, 1));
+  }
+
+  void set(DateTime from, DateTime to) => state = (from: from, to: to);
+}
+
+final reportBucketProvider = NotifierProvider<ReportBucketNotifier, String>(
+  ReportBucketNotifier.new,
+);
+
+class ReportBucketNotifier extends Notifier<String> {
+  @override
+  String build() => 'day';
+
+  void set(String bucket) => state = bucket;
+}
+
+/// Null means every property the partner owns. Only meaningful once a
+/// partner can own more than one, but the plumbing is ready either way.
+final reportPropertyFilterProvider =
+    NotifierProvider<ReportPropertyFilterNotifier, String?>(
+      ReportPropertyFilterNotifier.new,
+    );
+
+class ReportPropertyFilterNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? propertyId) => state = propertyId;
+}
+
+typedef ReportKey =
+    ({
+      ReportType type,
+      DateTime from,
+      DateTime to,
+      String bucket,
+      String? propertyId,
+    });
+
+final reportProvider = FutureProvider.autoDispose
+    .family<ReportResult, ReportKey>((ref, key) async {
+      final data = await ref
+          .watch(apiClientProvider)
+          .get<dynamic>(
+            '/partner/reports/${key.type.path}',
+            query: {
+              'from': apiDay(key.from),
+              'to': apiDay(key.to),
+              'bucket': key.bucket,
+              if (key.propertyId != null) 'propertyId': key.propertyId,
+            },
+          );
+      return ReportResult(Map<String, dynamic>.from(data as Map));
+    });
 
 // ── profile ─────────────────────────────────────────────────────────────────
 
@@ -342,15 +540,38 @@ class PartnerActions {
 
   ApiClient get _api => ref.read(apiClientProvider);
 
+  void _invalidateCalendar() {
+    ref.invalidate(monthSummaryProvider);
+    ref.invalidate(dayBoardProvider);
+  }
+
   void _invalidateBookings() {
+    _invalidateCalendar();
     ref.invalidate(bookingsProvider);
     ref.invalidate(bookingCountsProvider);
     ref.invalidate(dashboardProvider);
   }
 
   Future<void> setBookingStatus(String bookingId, String status) async {
-    await _api.patch<dynamic>('/partner/bookings/$bookingId/status', body: {'status': status});
+    await _api.patch<dynamic>(
+      '/partner/bookings/$bookingId/status',
+      body: {'status': status},
+    );
     ref.invalidate(bookingDetailProvider(bookingId));
+    _invalidateBookings();
+  }
+
+  /// Sets, replaces or clears which physical room(s) a booking holds. Pass an
+  /// empty list to clear — the API treats "assign no room" as a real choice,
+  /// not an error, since letting the property decide later is the default for
+  /// every booking whose room type doesn't offer guest self-selection.
+  Future<void> assignRoom(String bookingId, List<String> roomIds) async {
+    await _api.patch<dynamic>(
+      '/partner/bookings/$bookingId/room',
+      body: {'roomIds': roomIds},
+    );
+    ref.invalidate(bookingDetailProvider(bookingId));
+    ref.invalidate(bookingRoomOptionsProvider(bookingId));
     _invalidateBookings();
   }
 
@@ -385,7 +606,8 @@ class PartnerActions {
         'quantity': quantity,
         'guestName': guestName,
         'guestPhone': guestPhone,
-        if (guestEmail != null && guestEmail.isNotEmpty) 'guestEmail': guestEmail,
+        if (guestEmail != null && guestEmail.isNotEmpty)
+          'guestEmail': guestEmail,
       },
     );
     _invalidateBookings();
@@ -460,7 +682,10 @@ class PartnerActions {
     if (roomTypeId != null) {
       await _api.patch<dynamic>('/partner/room-types/$roomTypeId', body: body);
     } else {
-      await _api.post<dynamic>('/partner/properties/$propertyId/room-types', body: body);
+      await _api.post<dynamic>(
+        '/partner/properties/$propertyId/room-types',
+        body: body,
+      );
     }
     ref.invalidate(propertiesProvider);
   }
@@ -476,7 +701,11 @@ class PartnerActions {
 
   /// Adds one numbered room under a room type. The API 400s if `roomNumber` is
   /// already taken within that type — the caller shows the API's own message.
-  Future<RoomUnit> createRoom(String roomTypeId, String roomNumber, {String? floor}) async {
+  Future<RoomUnit> createRoom(
+    String roomTypeId,
+    String roomNumber, {
+    String? floor,
+  }) async {
     final data = await _api.post<dynamic>(
       '/partner/room-types/$roomTypeId/rooms',
       body: {
@@ -499,28 +728,36 @@ class PartnerActions {
     List<String> roomNumbers, {
     String? floor,
   }) async {
-    final results = await Future.wait(roomNumbers.map((number) async {
-      try {
-        final data = await _api.post<dynamic>(
-          '/partner/room-types/$roomTypeId/rooms',
-          body: {
-            'roomNumber': number,
-            if (floor != null && floor.isNotEmpty) 'floor': floor,
-          },
-        );
-        return (
-          number: number,
-          room: RoomUnit.fromJson(Map<String, dynamic>.from(data as Map)),
-          error: null as String?,
-        );
-      } on ApiException catch (e) {
-        return (number: number, room: null as RoomUnit?, error: e.message);
-      }
-    }));
+    final results = await Future.wait(
+      roomNumbers.map((number) async {
+        try {
+          final data = await _api.post<dynamic>(
+            '/partner/room-types/$roomTypeId/rooms',
+            body: {
+              'roomNumber': number,
+              if (floor != null && floor.isNotEmpty) 'floor': floor,
+            },
+          );
+          return (
+            number: number,
+            room: RoomUnit.fromJson(Map<String, dynamic>.from(data as Map)),
+            error: null as String?,
+          );
+        } on ApiException catch (e) {
+          return (number: number, room: null as RoomUnit?, error: e.message);
+        }
+      }),
+    );
     ref.invalidate(propertiesProvider);
     return (
-      created: [for (final r in results) if (r.room != null) r.room!],
-      failed: {for (final r in results) if (r.error != null) r.number: r.error!},
+      created: [
+        for (final r in results)
+          if (r.room != null) r.room!,
+      ],
+      failed: {
+        for (final r in results)
+          if (r.error != null) r.number: r.error!,
+      },
     );
   }
 
@@ -543,6 +780,7 @@ class PartnerActions {
       },
     );
     ref.invalidate(propertiesProvider);
+    _invalidateCalendar();
     return RoomUnit.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
@@ -557,19 +795,31 @@ class PartnerActions {
     return j['deleted'] == true;
   }
 
-  Future<void> updateProperty(String propertyId, Map<String, dynamic> body) async {
+  Future<void> updateProperty(
+    String propertyId,
+    Map<String, dynamic> body,
+  ) async {
     await _api.patch<dynamic>('/partner/properties/$propertyId', body: body);
     ref.invalidate(propertiesProvider);
   }
 
-  Future<void> uploadPropertyPhoto(String propertyId, MultipartFile file) async {
-    await _api.upload<dynamic>('/partner/properties/$propertyId/photos', file: file);
+  Future<void> uploadPropertyPhoto(
+    String propertyId,
+    MultipartFile file,
+  ) async {
+    await _api.upload<dynamic>(
+      '/partner/properties/$propertyId/photos',
+      file: file,
+    );
     ref.invalidate(propertiesProvider);
   }
 
   /// Applies a full front-to-back photo order in one call — `photoIds.first`
   /// becomes the cover. See UploadsService.reorderPhotos on the backend.
-  Future<void> reorderPropertyPhotos(String propertyId, List<String> photoIds) async {
+  Future<void> reorderPropertyPhotos(
+    String propertyId,
+    List<String> photoIds,
+  ) async {
     await _api.patch<dynamic>(
       '/partner/properties/$propertyId/photos/order',
       body: {'photoIds': photoIds},
@@ -580,22 +830,34 @@ class PartnerActions {
   /// Photos are rows now, so they are addressed by id. Deleting by position was
   /// only ever safe while they lived in an ordered jsonb array.
   Future<void> deletePropertyPhoto(String propertyId, String imageId) async {
-    await _api.delete<dynamic>('/partner/properties/$propertyId/photos/$imageId');
+    await _api.delete<dynamic>(
+      '/partner/properties/$propertyId/photos/$imageId',
+    );
     ref.invalidate(propertiesProvider);
   }
 
   Future<void> setPropertyCover(String propertyId, String imageId) async {
-    await _api.patch<dynamic>('/partner/properties/$propertyId/photos/$imageId/cover');
+    await _api.patch<dynamic>(
+      '/partner/properties/$propertyId/photos/$imageId/cover',
+    );
     ref.invalidate(propertiesProvider);
   }
 
-  Future<void> uploadRoomTypePhoto(String roomTypeId, MultipartFile file) async {
-    await _api.upload<dynamic>('/partner/room-types/$roomTypeId/photos', file: file);
+  Future<void> uploadRoomTypePhoto(
+    String roomTypeId,
+    MultipartFile file,
+  ) async {
+    await _api.upload<dynamic>(
+      '/partner/room-types/$roomTypeId/photos',
+      file: file,
+    );
     ref.invalidate(propertiesProvider);
   }
 
   Future<void> deleteRoomTypePhoto(String roomTypeId, String imageId) async {
-    await _api.delete<dynamic>('/partner/room-types/$roomTypeId/photos/$imageId');
+    await _api.delete<dynamic>(
+      '/partner/room-types/$roomTypeId/photos/$imageId',
+    );
     ref.invalidate(propertiesProvider);
   }
 
@@ -615,6 +877,13 @@ class PartnerActions {
     await _api.post<dynamic>('/partner/notifications/read-all');
     ref.invalidate(notificationsProvider);
     ref.invalidate(dashboardProvider);
+  }
+
+  /// Clears the housekeeping flag once the room has actually been cleaned.
+  /// The API 400s if the room isn't currently `needs_cleaning`.
+  Future<void> markRoomClean(String roomId) async {
+    await _api.patch<dynamic>('/partner/rooms/$roomId/clean');
+    _invalidateCalendar();
   }
 }
 

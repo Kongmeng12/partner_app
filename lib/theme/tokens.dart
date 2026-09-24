@@ -68,7 +68,8 @@ const bookingStatusPill = <String, Pill>{
   'confirmed': Pill(C.successBg, C.successFg, 'ຢືນຢັນ'),
   'pending': Pill(C.warnBg, C.warnFg, 'ລໍຖ້າ'),
   'staying': Pill(C.accentSoft, C.accentDark, 'ກຳລັງພັກ'),
-  'done': Pill(C.infoBg, C.infoFg, 'ສຳເລັດ'),
+  'completed': Pill(C.infoBg, C.infoFg, 'ສຳເລັດ'),
+  'no_show': Pill(C.neutralBg, C.neutralFg, 'ບໍ່ມາ'),
   'cancelled': Pill(C.dangerBg, C.dangerFg, 'ຍົກເລີກ'),
 };
 
@@ -113,6 +114,7 @@ const roomUnitStatusPill = <String, Pill>{
   'available': Pill(C.successBg, C.successFg, 'ພ້ອມໃຊ້'),
   'maintenance': Pill(C.warnBg, C.warnFg, 'ບຳລຸງຮັກສາ'),
   'inactive': Pill(C.neutralBg, C.neutralFg, 'ປິດໃຊ້ງານ'),
+  'needs_cleaning': Pill(C.warnBg, C.warnFg, 'ຕ້ອງທຳຄວາມສະອາດ'),
 };
 
 const fontFamily = 'NotoSansLao';
@@ -152,13 +154,19 @@ ThemeData buildTheme() {
         side: const BorderSide(color: C.border),
       ),
     ),
-    dividerTheme: const DividerThemeData(color: C.divider, thickness: 1, space: 1),
+    dividerTheme: const DividerThemeData(
+      color: C.divider,
+      thickness: 1,
+      space: 1,
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: C.accent,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(50),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.md)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(R.md),
+        ),
         textStyle: const TextStyle(
           fontFamily: fontFamily,
           fontSize: 15,
@@ -171,7 +179,9 @@ ThemeData buildTheme() {
         foregroundColor: C.text,
         minimumSize: const Size.fromHeight(50),
         side: const BorderSide(color: C.border),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.md)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(R.md),
+        ),
         textStyle: const TextStyle(
           fontFamily: fontFamily,
           fontSize: 15,
@@ -204,13 +214,20 @@ ThemeData buildTheme() {
       elevation: 0,
       height: 66,
       labelTextStyle: WidgetStateProperty.all(
-        const TextStyle(fontFamily: fontFamily, fontSize: 11, fontWeight: FontWeight.w600),
+        const TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: C.darkPanel,
-      contentTextStyle: const TextStyle(fontFamily: fontFamily, color: Colors.white),
+      contentTextStyle: const TextStyle(
+        fontFamily: fontFamily,
+        color: Colors.white,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(R.md)),
     ),
     textTheme: base.textTheme.apply(

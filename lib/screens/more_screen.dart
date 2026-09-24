@@ -79,6 +79,12 @@ class MoreScreen extends ConsumerWidget {
             onTap: () => context.go('/more/reviews'),
           ),
           _Tile(
+            icon: Icons.bar_chart_outlined,
+            title: 'ລາຍງານ',
+            subtitle: 'ລາຍຮັບ, ການຈອງ, ອັດຕາເຂົ້າພັກ ແລະ ອື່ນໆ',
+            onTap: () => context.go('/more/reports'),
+          ),
+          _Tile(
             icon: Icons.notifications_none,
             title: 'ແຈ້ງເຕືອນ',
             subtitle: unreadNotifications > 0 ? '$unreadNotifications ອັນທີ່ຍັງບໍ່ອ່ານ' : null,
