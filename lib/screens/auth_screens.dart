@@ -119,7 +119,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       validator: (v) =>
                           (v == null || v.length < 8) ? 'ລະຫັດຜ່ານຢ່າງໜ້ອຍ 8 ຕົວອັກສອນ' : null,
                     ),
-                    const SizedBox(height: 22),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _busy ? null : () => context.push('/forgot-password'),
+                        child: const Text('ລືມລະຫັດຜ່ານ?'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     FilledButton(
                       onPressed: _busy ? null : _submit,
                       child: _busy

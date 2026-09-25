@@ -10,6 +10,7 @@ import 'screens/calendar_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/day_detail_screen.dart';
+import 'screens/forgot_password_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/payouts_screen.dart';
@@ -49,7 +50,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final stage = ref.read(authProvider).stage;
       final path = state.matchedLocation;
 
-      final onAuthRoute = path == '/login' || path == '/register';
+      final onAuthRoute =
+          path == '/login' || path == '/register' || path == '/forgot-password';
 
       switch (stage) {
         case AuthStage.restoring:
@@ -75,6 +77,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
       GoRoute(
         path: '/pending',
         builder: (_, __) => const PendingApprovalScreen(),

@@ -153,9 +153,6 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
             );
           }
 
-          final selected =
-              list.where((e) => e.roomType.id == _roomTypeId).firstOrNull;
-
           return Form(
             key: _form,
             child: ListView(
@@ -184,14 +181,6 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                             (v) => setState(() {
                               if (v != widget.roomTypeId) _roomId = null;
                               _roomTypeId = v;
-                              final rt =
-                                  list
-                                      .where((e) => e.roomType.id == v)
-                                      .firstOrNull
-                                      ?.roomType;
-                              if (rt != null && _guests > rt.maxOccupancy) {
-                                _guests = rt.maxOccupancy;
-                              }
                             }),
                       ),
                       if (_roomId != null && widget.roomNumber != null) ...[
@@ -271,26 +260,11 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                             ),
                           ),
                           IconButton(
-                            onPressed:
-                                selected == null ||
-                                        _guests < selected.roomType.maxOccupancy
-                                    ? () => setState(() => _guests++)
-                                    : null,
+                            onPressed: () => setState(() => _guests++),
                             icon: const Icon(Icons.add_circle_outline),
                           ),
                         ],
                       ),
-                      if (selected != null)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'ຫ້ອງນີ້ຮັບໄດ້ສູງສຸດ ${selected.roomType.maxOccupancy} ຄົນ',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: C.faint,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),

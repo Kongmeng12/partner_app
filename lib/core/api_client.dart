@@ -208,6 +208,41 @@ class ApiClient {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  // ── forgot password: code by email or SMS, then a new password ───────────
+  //
+  // The same three calls the customer app makes. The API answers the same way
+  // whether or not the email/phone has an account, so these never reveal it.
+
+  /// Sends a 6-digit code to [target]: an email address gets an email, a Lao
+  /// mobile number gets an SMS.
+  Future<void> requestPasswordResetCode(String target) => _send<dynamic>(
+        'POST',
+        '/auth/otp/request',
+        body: {'target': target, 'purpose': 'reset_password'},
+        anonymous: true,
+      );
+
+  /// Checks the code. Returns the token that authorises the new password, or
+  /// null when the code was right but no account matches [target].
+  Future<String?> verifyPasswordResetCode(String target, String code) async {
+    final data = await _send<dynamic>(
+      'POST',
+      '/auth/otp/verify',
+      body: {'target': target, 'purpose': 'reset_password', 'code': code},
+      anonymous: true,
+    );
+    final token = (data as Map?)?['resetToken'];
+    return token is String && token.isNotEmpty ? token : null;
+  }
+
+  /// Sets the new password. The API also signs out every other session.
+  Future<void> resetPassword(String resetToken, String password) => _send<dynamic>(
+        'POST',
+        '/auth/password/reset',
+        body: {'token': resetToken, 'password': password},
+        anonymous: true,
+      );
+
   /// Best effort: the caller clears local tokens regardless of the outcome, so
   /// a failed round trip must not leave the app stuck on a screen it cannot use.
   Future<void> logout() async {

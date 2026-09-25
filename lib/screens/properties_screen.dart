@@ -535,10 +535,13 @@ class _RoomSheetState extends ConsumerState<_RoomSheet> {
                     child: TextFormField(
                       controller: _capacity,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'ຮັບໄດ້ (ຄົນ)'),
+                      decoration: const InputDecoration(
+                        labelText: 'ຈຳນວນຄົນມາດຕະຖານ',
+                        helperText: 'ບໍ່ຈຳກັດ · ແຂກຈອງເກີນນີ້ໄດ້',
+                      ),
                       validator: (v) {
                         final n = int.tryParse(v ?? '');
-                        if (n == null || n < 1 || n > 20) return '1–20';
+                        if (n == null || n < 1 || n > 30) return '1–30';
                         return null;
                       },
                     ),
