@@ -873,8 +873,31 @@ class PartnerActions {
     await ref.read(authProvider.notifier).refreshPartner();
   }
 
+  /// Asks an admin to hide a guest's review. Nothing is hidden yet: it lands
+  /// in the admin's "ລໍກວດ" tab and stays published until they decide.
+  Future<void> requestHideReview(
+    String reviewId,
+    String reason,
+    String? detail,
+  ) async {
+    await _api.post<dynamic>(
+      '/reviews/$reviewId/report',
+      body: {
+        'reason': reason,
+        if (detail != null && detail.trim().isNotEmpty) 'detail': detail.trim(),
+      },
+    );
+    ref.invalidate(reviewsProvider);
+  }
+
   Future<void> markAllNotificationsRead() async {
     await _api.post<dynamic>('/partner/notifications/read-all');
+    ref.invalidate(notificationsProvider);
+    ref.invalidate(dashboardProvider);
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    await _api.post<dynamic>('/partner/notifications/$id/read');
     ref.invalidate(notificationsProvider);
     ref.invalidate(dashboardProvider);
   }

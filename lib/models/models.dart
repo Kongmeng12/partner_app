@@ -394,7 +394,9 @@ class BookingSummary {
     guestPhone: _strOrNull(j['guestPhone']),
     roomType: _strOrNull(j['roomType']),
     quantity: _int(j['quantity'], 1),
-    roomNumbers: (j['roomNumbers'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+    roomNumbers:
+        (j['roomNumbers'] as List?)?.map((e) => e.toString()).toList() ??
+        const [],
     checkIn: _str(j['checkIn']),
     checkOut: _str(j['checkOut']),
     nights: _int(j['nights']),
@@ -471,13 +473,17 @@ class BookingDetail {
   /// the date windows itself (check-in opens on the arrival date, and so on),
   /// so the UI offers exactly these and nothing more instead of guessing.
   List<String> get allowedMoves =>
-      (raw['nextStatus'] as List?)?.map((e) => e.toString()).toList() ?? const [];
+      (raw['nextStatus'] as List?)?.map((e) => e.toString()).toList() ??
+      const [];
 
-  bool get canCheckIn => status == 'confirmed' && allowedMoves.contains('staying');
-  bool get canCheckOut => status == 'staying' && allowedMoves.contains('completed');
+  bool get canCheckIn =>
+      status == 'confirmed' && allowedMoves.contains('staying');
+  bool get canCheckOut =>
+      status == 'staying' && allowedMoves.contains('completed');
 
   /// A mis-tapped check-in can be walked back while the guest is `staying`.
-  bool get canUndoCheckIn => status == 'staying' && allowedMoves.contains('confirmed');
+  bool get canUndoCheckIn =>
+      status == 'staying' && allowedMoves.contains('confirmed');
 
   /// Unpaid: nothing to do by hand — the booking confirms itself when the
   /// payment lands (and is cancelled by the system if the hold runs out).
@@ -604,6 +610,7 @@ class Review {
     this.title,
     this.comment,
     this.createdAt,
+    this.hideRequestStatus,
   });
 
   final String id;
@@ -614,6 +621,13 @@ class Review {
   final String? comment;
   final String? createdAt;
 
+  /// This partner's latest request to hide the review: `pending` (waiting for
+  /// an admin), `dismissed` (admin kept it), `reviewed` (upheld), or null.
+  final String? hideRequestStatus;
+
+  /// A new request can be sent unless one is already waiting.
+  bool get canRequestHide => hideRequestStatus != 'pending';
+
   factory Review.fromJson(Map<String, dynamic> j) => Review(
     id: _str(j['id']),
     stars: _int(j['stars']),
@@ -622,6 +636,7 @@ class Review {
     title: _strOrNull(j['title']),
     comment: _strOrNull(j['comment']),
     createdAt: _strOrNull(j['createdAt']),
+    hideRequestStatus: _strOrNull((j['hideRequest'] as Map?)?['status']),
   );
 }
 
@@ -633,6 +648,8 @@ class AppNotification {
     required this.type,
     required this.isRead,
     this.createdAt,
+    this.referenceType,
+    this.referenceId,
   });
 
   final String id;
@@ -642,6 +659,13 @@ class AppNotification {
   final bool isRead;
   final String? createdAt;
 
+  /// What tapping this notification should open — `booking`, `conversation`,
+  /// `payout` or `partner` (the partner's own approval status). `referenceId`
+  /// is that thing's id. Same taxonomy as the customer app's `NotificationItem`
+  /// — both read the same backend feed.
+  final String? referenceType;
+  final String? referenceId;
+
   factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
     id: _str(j['id']),
     title: _str(j['title']),
@@ -649,6 +673,8 @@ class AppNotification {
     type: _str(j['type']),
     isRead: _bool(j['isRead']),
     createdAt: _strOrNull(j['createdAt']),
+    referenceType: _strOrNull(j['referenceType']),
+    referenceId: _strOrNull(j['referenceId']),
   );
 }
 
