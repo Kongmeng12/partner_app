@@ -285,6 +285,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ),
             ),
 
+            // Right under the guest, not below the money: it's something the
+            // front desk has to act on (late arrival, extra bed), so it must be
+            // seen before check-in rather than found after scrolling.
+            if (b.specialRequest != null) ...[
+              const SizedBox(height: 14),
+              _SpecialRequestCard(text: b.specialRequest!),
+            ],
+
             const SizedBox(height: 14),
             SectionCard(
               title: 'ການເຂົ້າພັກ',
@@ -343,17 +351,6 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ),
             ),
 
-            if (b.specialRequest != null && b.specialRequest!.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionCard(
-                title: 'ຄຳຂໍພິເສດຈາກແຂກ',
-                child: Text(
-                  b.specialRequest!,
-                  style: const TextStyle(fontSize: 13.5, color: C.soft, height: 1.6),
-                ),
-              ),
-            ],
-
             const SizedBox(height: 20),
 
             // Only the moves the backend says are open today are offered — it
@@ -409,6 +406,52 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The guest's note from the booking screen, tinted with the accent so it
+/// reads as "needs your attention" rather than as one more record row.
+class _SpecialRequestCard extends StatelessWidget {
+  const _SpecialRequestCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: C.accentSoft,
+        borderRadius: BorderRadius.circular(R.lg),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.sticky_note_2_outlined, size: 19, color: C.accentDark),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ຄວາມຕ້ອງການເພີ່ມເຕີມຈາກແຂກ',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: C.accentDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  text,
+                  style: const TextStyle(fontSize: 13.5, color: C.text, height: 1.55),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -434,7 +434,11 @@ class BookingDetail {
 
   /// What the property is owed for this stay.
   int get payout => _int(raw['payout']);
-  String? get specialRequest => _strOrNull(raw['specialRequest']);
+  /// Trimmed; null when the guest left it blank.
+  String? get specialRequest {
+    final s = _strOrNull(raw['specialRequest'])?.trim();
+    return s == null || s.isEmpty ? null : s;
+  }
   String? get createdAt => _strOrNull(raw['createdAt']);
   String? get holdExpiresAt => _strOrNull(raw['holdExpiresAt']);
   bool get isWalkIn => source == 'walk_in';
