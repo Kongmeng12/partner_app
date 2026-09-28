@@ -351,6 +351,26 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ),
             ),
 
+            // Who cancelled and why, and where the guest's money went — the
+            // question a guest calling the front desk will ask first.
+            if (b.status == 'cancelled' && b.hasCancellation) ...[
+              const SizedBox(height: 14),
+              SectionCard(
+                title: 'ການຍົກເລີກ',
+                child: Column(
+                  children: [
+                    LabelledRow(label: 'ວັນທີ', value: laoDateTime(b.cancelledAt)),
+                    LabelledRow(label: 'ເຫດຜົນ', value: b.cancelReason ?? '—'),
+                    if (b.cancelPenalty > 0 || b.cancelRefund > 0) ...[
+                      const Divider(height: 20),
+                      MoneyRow(label: 'ຄ່າປັບ (ບໍ່ຄືນແຂກ)', amount: b.cancelPenalty),
+                      MoneyRow(label: 'ຄືນເງິນໃຫ້ແຂກ', amount: b.cancelRefund, strong: true),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 20),
 
             // Only the moves the backend says are open today are offered — it
@@ -362,7 +382,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             if (b.awaitingPayment)
               _StatusNote(
                 icon: Icons.hourglass_top_rounded,
-                text: 'ລໍຖ້າແຂກຈ່າຍເງິນ — ລະບົບຈະຢືນຢັນການຈອງໃຫ້ເອງເມື່ອໄດ້ຮັບເງິນ',
+                // The hold is minutes long, so the time alone is enough — and
+                // it tells the front desk whether the room is worth keeping.
+                text: b.holdExpiresAt != null
+                    ? 'ລໍຖ້າແຂກຈ່າຍເງິນ · ໝົດເວລາ ${laoTime(b.holdExpiresAt)}\n'
+                        'ຈ່າຍແລ້ວລະບົບຢືນຢັນໃຫ້ເອງ · ບໍ່ຈ່າຍລະບົບຍົກເລີກໃຫ້ເອງ'
+                    : 'ລໍຖ້າແຂກຈ່າຍເງິນ — ລະບົບຈະຢືນຢັນການຈອງໃຫ້ເອງເມື່ອໄດ້ຮັບເງິນ',
               ),
 
             if (b.status == 'confirmed')

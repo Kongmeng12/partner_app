@@ -196,6 +196,29 @@ class BookingCard extends StatelessWidget {
                     ),
                 ],
               ),
+              // One line of the guest's note, in the accent colour, so the
+              // bookings that need something done stand out in the list.
+              if (booking.specialRequest != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.sticky_note_2_outlined, size: 15, color: C.accentDark),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        booking.specialRequest!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: C.accentDark,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

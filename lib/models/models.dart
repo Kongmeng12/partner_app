@@ -35,6 +35,12 @@ double? _double(Object? v) {
 String _str(Object? v, [String fallback = '']) => v?.toString() ?? fallback;
 String? _strOrNull(Object? v) => v?.toString();
 
+/// Trimmed text, or null when missing or blank — for free text a guest typed.
+String? _textOrNull(Object? v) {
+  final s = v?.toString().trim();
+  return s == null || s.isEmpty ? null : s;
+}
+
 bool _bool(Object? v, [bool fallback = false]) => v is bool ? v : fallback;
 
 List<Map<String, dynamic>> _mapList(Object? v) {
@@ -357,11 +363,15 @@ class BookingSummary {
     this.roomNumbers = const [],
     this.paymentStatus,
     this.createdAt,
+    this.specialRequest,
   });
 
   final String id;
   final String code;
   final String? propertyId;
+
+  /// The guest's note from booking, trimmed; null when there is none.
+  final String? specialRequest;
   final String property;
   final String guest;
   final String? guestPhone;
@@ -407,6 +417,7 @@ class BookingSummary {
     source: _str(j['source'], 'app'),
     paymentStatus: _strOrNull(j['paymentStatus']),
     createdAt: _strOrNull(j['createdAt']),
+    specialRequest: _textOrNull(j['specialRequest']),
   );
 }
 
@@ -435,13 +446,23 @@ class BookingDetail {
   /// What the property is owed for this stay.
   int get payout => _int(raw['payout']);
   /// Trimmed; null when the guest left it blank.
-  String? get specialRequest {
-    final s = _strOrNull(raw['specialRequest'])?.trim();
-    return s == null || s.isEmpty ? null : s;
-  }
+  String? get specialRequest => _textOrNull(raw['specialRequest']);
   String? get createdAt => _strOrNull(raw['createdAt']);
   String? get holdExpiresAt => _strOrNull(raw['holdExpiresAt']);
   bool get isWalkIn => source == 'walk_in';
+
+  /// Null unless the booking was cancelled.
+  Map<String, dynamic>? get _cancellation =>
+      raw['cancellation'] is Map
+          ? Map<String, dynamic>.from(raw['cancellation'] as Map)
+          : null;
+  bool get hasCancellation => _cancellation != null;
+  String? get cancelReason => _textOrNull(_cancellation?['reason']);
+  String? get cancelledAt => _strOrNull(_cancellation?['cancelledAt']);
+
+  /// What the property keeps from a paid booking that was cancelled.
+  int get cancelPenalty => _int(_cancellation?['penalty']);
+  int get cancelRefund => _int(_cancellation?['refund']);
 
   Map<String, dynamic> get _guest =>
       Map<String, dynamic>.from(raw['guest'] as Map? ?? const {});
