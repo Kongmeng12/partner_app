@@ -8,6 +8,8 @@ import 'screens/bookings_screen.dart';
 import 'screens/booking_detail_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/check_in_scan_screen.dart';
+import 'screens/check_in_verify_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/day_detail_screen.dart';
 import 'screens/forgot_password_screen.dart';
@@ -121,6 +123,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                           roomNumber: s.uri.queryParameters['roomNumber'],
                         ),
                   ),
+                  // Before ':id', or "scan" would be read as a booking id.
+                  GoRoute(
+                    path: 'scan',
+                    builder: (_, __) => const CheckInScanScreen(),
+                  ),
                   // No chat route under a booking: conversations are keyed by
                   // conversation, not booking, and only a guest can open one.
                   GoRoute(
@@ -129,6 +136,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                         (_, s) => BookingDetailScreen(
                           bookingId: s.pathParameters['id']!,
                         ),
+                    routes: [
+                      GoRoute(
+                        path: 'check-in',
+                        builder:
+                            (_, s) => CheckInVerifyScreen(
+                              bookingId: s.pathParameters['id']!,
+                            ),
+                      ),
+                    ],
                   ),
                 ],
               ),

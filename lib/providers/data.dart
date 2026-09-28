@@ -552,6 +552,15 @@ class PartnerActions {
     ref.invalidate(dashboardProvider);
   }
 
+  /// Turns a scanned check-in QR into the booking it vouches for. The server
+  /// checks the signature and that the booking is this partner's; a forged,
+  /// printed or foreign code comes back as an [ApiException] saying which.
+  /// Changes nothing — checking in is still [setBookingStatus].
+  Future<String> scanCheckIn(String qr) async {
+    final data = await _api.post<dynamic>('/partner/check-in/scan', body: {'qr': qr});
+    return (data as Map)['bookingId'].toString();
+  }
+
   Future<void> setBookingStatus(String bookingId, String status) async {
     await _api.patch<dynamic>(
       '/partner/bookings/$bookingId/status',

@@ -179,6 +179,14 @@ class DashboardScreen extends ConsumerWidget {
               ],
 
               const SizedBox(height: 20),
+              // The front desk's most frequent job when a guest walks up —
+              // so it is the one filled button on the screen.
+              FilledButton.icon(
+                onPressed: () => context.go('/bookings/scan'),
+                icon: const Icon(Icons.qr_code_scanner, size: 20),
+                label: const Text('ສະແກນ QR ເຊັກອິນ'),
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
