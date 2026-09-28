@@ -545,6 +545,16 @@ class PartnerDashboard {
   int get weekCommission => _int(_week['commission']);
   int get weekNet => _int(_week['net']);
 
+  /// Monday of the current week (Lao calendar); revenue is counted from here.
+  String? get weekFrom => _strOrNull(_week['from']);
+
+  /// What the partner keeps from stays that end today. Revenue counts on the
+  /// check-out day, the same rule as the Reports screen.
+  Map<String, dynamic> get _revenueToday =>
+      Map<String, dynamic>.from(raw['revenueToday'] as Map? ?? const {});
+  int get todayNet => _int(_revenueToday['net']);
+  int get todayBookings => _int(_revenueToday['bookings']);
+
   Map<String, dynamic> get _payout =>
       Map<String, dynamic>.from(raw['payoutPending'] as Map? ?? const {});
   int get payoutPendingCount => _int(_payout['count']);

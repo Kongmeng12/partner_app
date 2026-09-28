@@ -141,27 +141,42 @@ class DashboardScreen extends ConsumerWidget {
               ],
 
               const SizedBox(height: 24),
-              const _SectionHeader(title: 'ການເງິນ'),
+              _SectionHeader(
+                title: 'ລາຍຮັບ',
+                actionLabel: 'ລາຍງານ',
+                onAction: () => context.go('/more/reports/revenue'),
+              ),
+              // What the partner keeps, counted when a stay ends — the same
+              // rule as the Reports screen, so the two never disagree.
               Row(
                 children: [
                   Expanded(
                     child: StatTile(
-                      label: 'ລາຍຮັບອາທິດນີ້',
-                      value: kipShort(d.weekNet),
-                      caption: '${d.weekBookings} ການຈອງ',
+                      label: 'ມື້ນີ້',
+                      value: kipShort(d.todayNet),
+                      caption: '${d.todayBookings} ການຈອງອອກມື້ນີ້',
+                      onTap: () => context.go('/more/reports/revenue'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: StatTile(
-                      label: 'ລໍໂອນ',
-                      value: kipShort(d.payoutPendingAmount),
-                      caption: '${d.payoutPendingCount} ງວດ',
-                      onTap: () => context.go('/more/payouts'),
+                      label: 'ອາທິດນີ້',
+                      value: kipShort(d.weekNet),
+                      caption: 'ແຕ່ ${laoDate(d.weekFrom)} · ${d.weekBookings} ການຈອງ',
+                      onTap: () => context.go('/more/reports/revenue'),
                     ),
                   ),
                 ],
               ),
+              if (d.payoutPendingCount > 0) ...[
+                const SizedBox(height: 12),
+                _ActionRow(
+                  icon: Icons.account_balance_wallet_outlined,
+                  text: 'ລໍໂອນ ${kipShort(d.payoutPendingAmount)} · ${d.payoutPendingCount} ງວດ',
+                  onTap: () => context.go('/more/payouts'),
+                ),
+              ],
 
               const SizedBox(height: 20),
               Row(
@@ -223,7 +238,9 @@ class _TodayHero extends StatelessWidget {
                 children: [
                   _HeroFigure(value: d.arrivalCount, label: 'ເຂົ້າພັກ'),
                   _HeroFigure(value: d.departureCount, label: 'ອອກ'),
-                  _HeroFigure(value: d.stayingCount, label: 'ພັກຢູ່'),
+                  // Booked into tonight, by date — not only guests someone
+                  // remembered to press "check in" for.
+                  _HeroFigure(value: d.stayingCount, label: 'ພັກຄືນນີ້'),
                 ],
               ),
               const SizedBox(height: 18),
