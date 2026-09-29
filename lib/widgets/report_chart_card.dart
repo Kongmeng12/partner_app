@@ -148,7 +148,7 @@ class ReportChartCard extends StatelessWidget {
   }
 }
 
-/// `2026-09-10` (day/week bucket) or `2026-09-01` (month bucket) → `10 ກ.ຍ.`.
+/// `2026-09-10` (day/week bucket) or `2026-09-01` (month bucket) → `10 ກັນຍາ`.
 String _axisLabel(String bucketKey) {
   if (bucketKey.isEmpty) return '';
   return laoDate('${bucketKey}T00:00:00.000Z');

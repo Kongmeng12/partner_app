@@ -16,19 +16,22 @@
 /// to reintroduce: one `DateTime.parse(x).day` is all it takes.
 library;
 
-const _laoMonthsShort = [
-  'ມັງກອນ.',
-  'ກຸມພາ.',
-  'ມີນາ.',
-  'ເມສາ.',
-  'ພຶດສະພາ.',
-  'ມິຖຸນາ.',
-  'ກໍລະກົດ.',
-  'ສິງຫາ.',
-  'ກັນຍາ.',
-  'ຕຸລາ.',
-  'ພະຈິກ.',
-  'ທັນວາ.',
+/// Full month names, used everywhere a date is shown. No trailing full stop:
+/// that belongs to an abbreviation (`ກ.ຍ.`), and after a whole word it reads as
+/// a typo — `19 ກັນຍາ.`.
+const _laoMonths = [
+  'ມັງກອນ',
+  'ກຸມພາ',
+  'ມີນາ',
+  'ເມສາ',
+  'ພຶດສະພາ',
+  'ມິຖຸນາ',
+  'ກໍລະກົດ',
+  'ສິງຫາ',
+  'ກັນຍາ',
+  'ຕຸລາ',
+  'ພະຈິກ',
+  'ທັນວາ',
 ];
 
 /// True when the value is a date-only column rendered as UTC midnight.
@@ -57,25 +60,25 @@ DateTime? parseDay(Object? value) {
   return DateTime.utc(l.year, l.month, l.day);
 }
 
-/// `13 ສ.ຫ.`
+/// `13 ສິງຫາ`
 String laoDate(Object? value) {
   final d = parseDay(value);
   if (d == null) return '—';
-  return '${d.day} ${_laoMonthsShort[d.month - 1]}';
+  return '${d.day} ${_laoMonths[d.month - 1]}';
 }
 
-/// `12–15 ກ.ຄ.`, collapsing the month when both dates share one.
+/// `12–15 ກໍລະກົດ`, collapsing the month when both dates share one.
 String laoDateRange(Object? from, Object? to) {
   final a = parseDay(from);
   final b = parseDay(to);
   if (a == null || b == null) return '—';
   if (a.month == b.month && a.year == b.year) {
-    return '${a.day}–${b.day} ${_laoMonthsShort[a.month - 1]}';
+    return '${a.day}–${b.day} ${_laoMonths[a.month - 1]}';
   }
   return '${laoDate(from)} – ${laoDate(to)}';
 }
 
-/// `13 ສ.ຫ. 2026 · 14:30` — a real timestamp, in the reader's own clock.
+/// `13 ສິງຫາ 2026 · 14:30` — a real timestamp, in the reader's own clock.
 String laoDateTime(Object? value) {
   if (value == null) return '—';
   final parsed =
@@ -84,7 +87,7 @@ String laoDateTime(Object? value) {
   final d = parsed.toLocal();
   final hh = d.hour.toString().padLeft(2, '0');
   final mm = d.minute.toString().padLeft(2, '0');
-  return '${d.day} ${_laoMonthsShort[d.month - 1]} ${d.year} · $hh:$mm';
+  return '${d.day} ${_laoMonths[d.month - 1]} ${d.year} · $hh:$mm';
 }
 
 /// `14:30` — the time alone, for a chat bubble where the day is already
@@ -166,26 +169,11 @@ List<String> isosBetween(String a, String b) {
   return isos;
 }
 
-const _laoMonthsLong = [
-  'ມັງກອນ',
-  'ກຸມພາ',
-  'ມີນາ',
-  'ເມສາ',
-  'ພຶດສະພາ',
-  'ມິຖຸນາ',
-  'ກໍລະກົດ',
-  'ສິງຫາ',
-  'ກັນຍາ',
-  'ຕຸລາ',
-  'ພະຈິກ',
-  'ທັນວາ',
-];
-
 /// `ກັນຍາ 2026`
 String laoMonthYear(DateTime day) =>
-    '${_laoMonthsLong[day.month - 1]} ${day.year}';
+    '${_laoMonths[day.month - 1]} ${day.year}';
 
 /// `ພຸດ 24 ກັນຍາ 2026` — the weekday matters on the day screen, where a host is
 /// deciding what to do about *that* day.
 String laoFullDate(DateTime day) =>
-    '${laoWeekdaysShort[day.weekday - 1]} ${day.day} ${_laoMonthsLong[day.month - 1]} ${day.year}';
+    '${laoWeekdaysShort[day.weekday - 1]} ${day.day} ${_laoMonths[day.month - 1]} ${day.year}';

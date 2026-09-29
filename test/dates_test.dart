@@ -28,8 +28,8 @@ void main() {
     });
 
     test('format as the day the guest booked', () {
-      expect(laoDate('2026-08-13T00:00:00.000Z'), '13 ສ.ຫ.');
-      expect(laoDate('2026-01-01T00:00:00.000Z'), '1 ມ.ກ.');
+      expect(laoDate('2026-08-13T00:00:00.000Z'), '13 ສິງຫາ');
+      expect(laoDate('2026-01-01T00:00:00.000Z'), '1 ມັງກອນ');
       expect(laoDate(null), '—');
       expect(laoDate('not a date'), '—');
     });
@@ -39,14 +39,14 @@ void main() {
     test('collapses the month when both ends share it', () {
       expect(
         laoDateRange('2026-07-12T00:00:00.000Z', '2026-07-15T00:00:00.000Z'),
-        '12–15 ກ.ຄ.',
+        '12–15 ກໍລະກົດ',
       );
     });
 
     test('spells both months when the stay crosses one', () {
       expect(
         laoDateRange('2026-07-30T00:00:00.000Z', '2026-08-02T00:00:00.000Z'),
-        '30 ກ.ຄ. – 2 ສ.ຫ.',
+        '30 ກໍລະກົດ – 2 ສິງຫາ',
       );
     });
 
