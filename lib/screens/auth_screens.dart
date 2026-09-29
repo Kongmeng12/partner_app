@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,7 @@ import '../providers/auth.dart';
 import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/form_bits.dart';
 import 'location_picker_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -164,19 +166,37 @@ class RegisterScreen extends ConsumerStatefulWidget {
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _form = GlobalKey<FormState>();
+
+  /// Top-to-bottom order of the form, which is also the order a failed submit
+  /// searches for the first field to jump to.
+  static const _order = [
+    'email',
+    'password',
+    'confirmPassword',
+    'ownerName',
+    'phone',
+    'businessName',
+    'propertyName',
+    'province',
+    'location',
+    'bankName',
+    'bankAccount',
+  ];
+  static const _nonText = {'province', 'location'};
+
   final _fields = {
-    for (final key in [
-      'email',
-      'password',
-      'ownerName',
-      'phone',
-      'businessName',
-      'propertyName',
-      'bankName',
-      'bankAccount',
-    ])
-      key: TextEditingController(),
+    for (final key in _order)
+      if (!_nonText.contains(key)) key: TextEditingController(),
   };
+  final _keys = {for (final key in _order) key: GlobalKey<FormFieldState<dynamic>>()};
+  late final _focus = {
+    for (final key in _fields.keys) _keys[key]!: FocusNode(),
+  };
+  final _termsKey = GlobalKey();
+
+  /// Set by the first press of "submit": the terms error only shows once the
+  /// applicant has tried to send, not on a fresh form.
+  bool _triedSubmit = false;
   String _propertyType = 'guesthouse';
 
   /// The API wants ids, not names. A typed province cannot be matched to a row,
@@ -208,11 +228,29 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     for (final c in _fields.values) {
       c.dispose();
     }
+    for (final f in _focus.values) {
+      f.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
+    setState(() => _triedSubmit = true);
+    final fieldsOk = _form.currentState!.validate();
+    if (!fieldsOk || !_acceptedTerms) {
+      if (!jumpToFirstError([for (final k in _order) _keys[k]!], focus: _focus)) {
+        final terms = _termsKey.currentContext;
+        if (terms != null) {
+          Scrollable.ensureVisible(terms, duration: const Duration(milliseconds: 250), alignment: 0.5);
+        }
+      }
+      showMessage(
+        context,
+        fieldsOk ? 'ກະລຸນາຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ' : 'ກະລຸນາແກ້ຊ່ອງທີ່ເປັນສີແດງ',
+        error: true,
+      );
+      return;
+    }
     setState(() => _busy = true);
 
     // Exactly the keys RegisterPartnerDto declares. The API runs with
@@ -279,23 +317,48 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+                    child: RequiredLegend(),
+                  ),
                   SectionCard(
                     title: 'ບັນຊີຂອງທ່ານ',
                     child: Column(
                       children: [
                         _text('email', 'ອີເມວ',
                             keyboard: TextInputType.emailAddress,
-                            validator: (v) =>
-                                (v == null || !v.contains('@')) ? 'ໃສ່ອີເມວໃຫ້ຖືກຕ້ອງ' : null),
+                            hint: 'name@gmail.com',
+                            validator: (v) => _need(v, 'ອີເມວ') ??
+                                (looksLikeEmail(v!) ? null : 'ອີເມວບໍ່ຖືກຕ້ອງ ເຊັ່ນ name@gmail.com')),
                         _text('password', 'ລະຫັດຜ່ານ',
                             obscure: true,
-                            validator: (v) => (v == null || v.length < 8)
-                                ? 'ຢ່າງໜ້ອຍ 8 ຕົວອັກສອນ'
-                                : null),
-                        _text('ownerName', 'ຊື່ເຈົ້າຂອງ', minLength: 2),
+                            onChanged: (_) {
+                              setState(() {});
+                              if (_fields['confirmPassword']!.text.isNotEmpty) {
+                                _keys['confirmPassword']!.currentState?.validate();
+                              }
+                            },
+                            validator: (v) => _need(v, 'ລະຫັດຜ່ານ') ??
+                                (isStrongPassword(v!) ? null : 'ລະຫັດຜ່ານຍັງບໍ່ຄົບເງື່ອນໄຂຂ້າງລຸ່ມ')),
+                        PasswordChecklist(password: _fields['password']!.text),
+                        _text('confirmPassword', 'ຢືນຢັນລະຫັດຜ່ານ',
+                            obscure: true,
+                            onChanged: (_) => setState(() {}),
+                            helper: _passwordsMatch ? '✓ ລະຫັດຜ່ານກົງກັນ' : null,
+                            validator: (v) => _need(v, 'ລະຫັດຜ່ານອີກຄັ້ງ') ??
+                                (v != _fields['password']!.text ? 'ລະຫັດຜ່ານບໍ່ກົງກັນ' : null)),
+                        _text('ownerName', 'ຊື່ເຈົ້າຂອງ',
+                            validator: (v) => _need(v, 'ຊື່ເຈົ້າຂອງ') ??
+                                (v!.trim().length < 2 ? 'ຊື່ຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
                         _text('phone', 'ເບີໂທ',
-                            keyboard: TextInputType.phone, minLength: 6),
-                        _text('businessName', 'ຊື່ທຸລະກິດ', minLength: 2),
+                            keyboard: TextInputType.phone,
+                            hint: '020 5555 0001',
+                            formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s]'))],
+                            validator: (v) => _need(v, 'ເບີໂທ') ??
+                                (looksLikePhone(v!) ? null : 'ເບີໂທບໍ່ຖືກຕ້ອງ ເຊັ່ນ 020 5555 0001')),
+                        _text('businessName', 'ຊື່ທຸລະກິດ',
+                            validator: (v) => _need(v, 'ຊື່ທຸລະກິດ') ??
+                                (v!.trim().length < 2 ? 'ຊື່ທຸລະກິດຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
                       ],
                     ),
                   ),
@@ -304,12 +367,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     title: 'ທີ່ພັກຂອງທ່ານ',
                     child: Column(
                       children: [
-                        _text('propertyName', 'ຊື່ທີ່ພັກ', minLength: 2),
+                        _text('propertyName', 'ຊື່ທີ່ພັກ',
+                            validator: (v) => _need(v, 'ຊື່ທີ່ພັກ') ??
+                                (v!.trim().length < 2 ? 'ຊື່ທີ່ພັກຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: DropdownButtonFormField<String>(
                             value: _propertyType,
-                            decoration: const InputDecoration(labelText: 'ປະເພດທີ່ພັກ'),
+                            decoration: InputDecoration(label: fieldLabel('ປະເພດທີ່ພັກ', required: true)),
                             items: [
                               for (final e in _types.entries)
                                 DropdownMenuItem(value: e.key, child: Text(e.value)),
@@ -329,7 +394,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     child: Column(
                       children: [
                         _text('bankName', 'ຊື່ທະນາຄານ', required: false),
-                        _text('bankAccount', 'ເລກບັນຊີ', required: false),
+                        _text('bankAccount', 'ເລກບັນຊີ',
+                            required: false,
+                            keyboard: TextInputType.number,
+                            // Optional, but a name without a number (or the
+                            // other way round) cannot be saved as an account.
+                            validator: (v) => _fields['bankName']!.text.trim().isNotEmpty &&
+                                    (v ?? '').trim().isEmpty
+                                ? 'ໃສ່ເລກບັນຊີ ຫຼື ລຶບຊື່ທະນາຄານອອກ'
+                                : null),
                       ],
                     ),
                   ),
@@ -338,20 +411,33 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   // it, so the button stays disabled rather than letting the
                   // partner fill in the whole form and be rejected at the end.
                   CheckboxListTile(
+                    key: _termsKey,
                     value: _acceptedTerms,
                     onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
-                    title: const Text(
-                      'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
-                      'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ຂໍ້ຕົກລົງ Partner',
+                    isError: _triedSubmit && !_acceptedTerms,
+                    title: const Text.rich(
+                      TextSpan(
+                        text: 'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
+                            'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ຂໍ້ຕົກລົງ Partner',
+                        children: [TextSpan(text: ' *', style: TextStyle(color: C.dangerFg))],
+                      ),
                       style: TextStyle(fontSize: 12.5, height: 1.45),
                     ),
+                    subtitle: _triedSubmit && !_acceptedTerms
+                        ? const Text(
+                            'ຕ້ອງຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ',
+                            style: TextStyle(fontSize: 12, color: C.dangerFg),
+                          )
+                        : null,
                   ),
                   const SizedBox(height: 6),
+                  // Always pressable: a greyed-out button does not say what
+                  // is missing, while a press jumps to the first problem.
                   FilledButton(
-                    onPressed: (_busy || !_acceptedTerms) ? null : _submit,
+                    onPressed: _busy ? null : _submit,
                     child: _busy
                         ? const SizedBox(
                             width: 20,
@@ -403,12 +489,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           ),
         ),
         data: (list) => DropdownButtonFormField<String>(
+          key: _keys['province'],
           value: _provinceId.isEmpty ? null : _provinceId,
-          decoration: const InputDecoration(labelText: 'ແຂວງ'),
+          decoration: InputDecoration(label: fieldLabel('ແຂວງ', required: true)),
           items: [
             for (final p in list) DropdownMenuItem(value: p.id, child: Text(p.name)),
           ],
-          validator: (v) => (v == null || v.isEmpty) ? 'ເລືອກແຂວງ' : null,
+          validator: (v) => (v == null || v.isEmpty) ? 'ກະລຸນາເລືອກແຂວງ' : null,
           onChanged: (v) => setState(() {
             _provinceId = v ?? '';
             // The old district belongs to the old province.
@@ -429,7 +516,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       child: districts.maybeWhen(
         data: (list) => DropdownButtonFormField<String>(
           value: _districtId.isEmpty ? null : _districtId,
-          decoration: const InputDecoration(labelText: 'ເມືອງ (ບໍ່ບັງຄັບ)'),
+          decoration: const InputDecoration(labelText: 'ເມືອງ'),
           items: [
             for (final d in list) DropdownMenuItem(value: d.id, child: Text(d.name)),
           ],
@@ -472,7 +559,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: FormField<LatLng>(
-        validator: (_) => _location == null ? 'ເລືອກທີ່ຕັ້ງໃນແຜນທີ່' : null,
+        key: _keys['location'],
+        validator: (_) =>
+            _location == null ? 'ກະລຸນາປັກໝຸດທີ່ຕັ້ງທີ່ພັກໃນແຜນທີ່' : null,
         builder: (field) {
           Future<void> pick() async {
             final picked = await Navigator.of(context).push<LatLng>(
@@ -486,7 +575,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           final location = _location;
           return InputDecorator(
             decoration: InputDecoration(
-              labelText: 'ທີ່ຕັ້ງໃນແຜນທີ່',
+              label: fieldLabel('ທີ່ຕັ້ງໃນແຜນທີ່', required: true),
               errorText: field.errorText,
               contentPadding: const EdgeInsets.all(10),
             ),
@@ -537,27 +626,51 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
   }
 
+  /// "ກະລຸນາໃສ່…" for an empty required field, or null.
+  String? _need(String? v, String what) =>
+      (v ?? '').trim().isEmpty ? 'ກະລຸນາໃສ່$what' : null;
+
+  bool get _passwordsMatch {
+    final confirm = _fields['confirmPassword']!.text;
+    return confirm.isNotEmpty && confirm == _fields['password']!.text;
+  }
+
   Widget _text(
     String key,
     String label, {
     bool obscure = false,
     bool required = true,
-    int minLength = 0,
     int lines = 1,
     TextInputType? keyboard,
+    String? hint,
+    String? helper,
+    ValueChanged<String>? onChanged,
+    List<TextInputFormatter>? formatters,
     String? Function(String?)? validator,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
+        key: _keys[key],
         controller: _fields[key],
+        focusNode: _focus[_keys[key]],
         obscureText: obscure && !_showPassword,
         keyboardType: keyboard,
+        textInputAction: TextInputAction.next,
+        inputFormatters: formatters,
+        onChanged: onChanged,
+        // Checked when the applicant leaves the field, not on every key —
+        // red text while someone is still typing their email is just noise.
+        autovalidateMode: AutovalidateMode.onUnfocus,
         maxLines: obscure ? 1 : lines,
         decoration: InputDecoration(
-          labelText: label,
-          // The same eye as the login screen: an applicant typing a new
-          // password with no confirm field needs a way to check it.
+          label: fieldLabel(label, required: required),
+          hintText: hint,
+          helperText: helper,
+          helperStyle: const TextStyle(color: C.successFg),
+          errorMaxLines: 2,
+          // The same eye as the login screen, shared by both password
+          // fields so the pair can be compared at a glance.
           suffixIcon: obscure
               ? IconButton(
                   icon: Icon(
@@ -568,14 +681,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 )
               : null,
         ),
-        validator: validator ??
-            (v) {
-              final value = v?.trim() ?? '';
-              if (!required) return null;
-              if (value.isEmpty) return 'ຕ້ອງໃສ່$label';
-              if (value.length < minLength) return '$label ສັ້ນເກີນໄປ';
-              return null;
-            },
+        validator: validator ?? (v) => required ? _need(v, label) : null,
       ),
     );
   }

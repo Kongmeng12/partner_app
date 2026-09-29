@@ -9,6 +9,7 @@ import '../core/api_client.dart';
 import '../providers/auth.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/form_bits.dart';
 
 /// Forgot password, the same flow as the customer app: a 6-digit code by email
 /// or SMS, then a new password.
@@ -254,19 +255,23 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         controller: _password,
         obscureText: !_showPassword,
         autofocus: true,
+        onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
-          labelText: 'ລະຫັດຜ່ານໃໝ່',
+          label: fieldLabel('ລະຫັດຜ່ານໃໝ່', required: true),
           prefixIcon: const Icon(Icons.lock_outline, size: 20),
           suffixIcon: eye,
+          errorMaxLines: 2,
         ),
-        validator: (v) => (v ?? '').length < 8 ? 'ຢ່າງໜ້ອຍ 8 ຕົວອັກສອນ' : null,
+        validator: (v) =>
+            isStrongPassword(v ?? '') ? null : 'ລະຫັດຜ່ານຍັງບໍ່ຄົບເງື່ອນໄຂຂ້າງລຸ່ມ',
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: 8),
+      PasswordChecklist(password: _password.text),
       TextFormField(
         controller: _confirm,
         obscureText: !_showPassword,
         decoration: InputDecoration(
-          labelText: 'ຢືນຢັນລະຫັດຜ່ານ',
+          label: fieldLabel('ຢືນຢັນລະຫັດຜ່ານ', required: true),
           prefixIcon: const Icon(Icons.lock_outline, size: 20),
           suffixIcon: eye,
         ),
@@ -280,12 +285,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
 }
 
 /// Same shapes the customer app accepts in its "email or phone" field.
-bool _isEmailOrPhone(String value) {
-  final v = value.trim();
-  final email = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v);
-  final phone = RegExp(r'^\+?[0-9][0-9\s-]{5,19}$').hasMatch(v);
-  return email || phone;
-}
+bool _isEmailOrPhone(String value) => looksLikeEmail(value) || looksLikePhone(value);
 
 /// Three thin bars, the current and done ones in the logo's orange.
 class _StepBar extends StatelessWidget {
