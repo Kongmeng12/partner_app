@@ -63,6 +63,7 @@ class DayBooking {
     required this.status,
     this.guestPhone,
     this.paymentStatus,
+    this.source,
     this.missingRooms = 0,
   });
 
@@ -80,6 +81,13 @@ class DayBooking {
 
   /// Latest `payments.status`, or null when nothing was ever paid or attempted.
   final String? paymentStatus;
+
+  /// `bookings.source`: `app` (booked online) or `walk_in`. Null from an API
+  /// that predates the field — shown as nothing rather than guessed as online.
+  final String? source;
+
+  bool get isWalkIn => source == 'walk_in';
+  bool get isOnline => source == 'app';
 
   /// Only set on an "unassigned" entry: how many of the booked rooms still
   /// have no room number.
@@ -99,6 +107,7 @@ class DayBooking {
     guests: _int(j['guests'], 1),
     status: j['status']?.toString() ?? '',
     paymentStatus: j['paymentStatus']?.toString(),
+    source: j['source']?.toString(),
     missingRooms: _int(j['missingRooms']),
   );
 }

@@ -15,6 +15,85 @@ import '../widgets/property_picker.dart';
 /// What the summary chips filter the room list by.
 enum _Filter { booked, arrivals, departures, free, cleaning }
 
+/// "ຈ່າຍແລ້ວ" / "ຍັງບໍ່ຈ່າຍ". Only an online booking has a payment on record —
+/// a walk-in pays at the desk and the app never sees it — so both leave
+/// walk-ins out rather than calling every one of them unpaid.
+enum _Payment { all, paid, unpaid }
+
+/// Filters on the bookings themselves — how they were made, where they stand
+/// on payment, who they are for — plus which room type to show. They combine
+/// with the summary tiles, which filter by what a room is doing.
+class _BoardFilters {
+  const _BoardFilters({
+    this.source,
+    this.roomTypeId,
+    this.payment = _Payment.all,
+    this.query = '',
+  });
+
+  /// `app` or `walk_in`; null for both.
+  final String? source;
+  final String? roomTypeId;
+  final _Payment payment;
+  final String query;
+
+  /// Whether anything narrows the bookings, as opposed to the room types.
+  bool get onBookings =>
+      source != null || payment != _Payment.all || query.trim().isNotEmpty;
+
+  bool get any => onBookings || roomTypeId != null;
+
+  /// A room type picked on another property matches nothing here, which would
+  /// read as an empty day — so it is ignored instead.
+  _BoardFilters forBoard(DayBoard board) =>
+      roomTypeId == null ||
+              board.roomTypes.any((s) => s.roomTypeId == roomTypeId)
+          ? this
+          : _BoardFilters(source: source, payment: payment, query: query);
+}
+
+/// Held in a provider rather than the screen's state so the filters survive
+/// ‹ › to the next day — each day is its own route and its own screen.
+final _boardFiltersProvider =
+    NotifierProvider<_BoardFiltersNotifier, _BoardFilters>(
+      _BoardFiltersNotifier.new,
+    );
+
+class _BoardFiltersNotifier extends Notifier<_BoardFilters> {
+  @override
+  _BoardFilters build() => const _BoardFilters();
+
+  void setSource(String? v) => state = _BoardFilters(
+    source: v,
+    roomTypeId: state.roomTypeId,
+    payment: state.payment,
+    query: state.query,
+  );
+
+  void setRoomType(String? v) => state = _BoardFilters(
+    source: state.source,
+    roomTypeId: v,
+    payment: state.payment,
+    query: state.query,
+  );
+
+  void setPayment(_Payment v) => state = _BoardFilters(
+    source: state.source,
+    roomTypeId: state.roomTypeId,
+    payment: v,
+    query: state.query,
+  );
+
+  void setQuery(String v) => state = _BoardFilters(
+    source: state.source,
+    roomTypeId: state.roomTypeId,
+    payment: state.payment,
+    query: v,
+  );
+
+  void clear() => state = const _BoardFilters();
+}
+
 /// Every room on one day: each room type, each numbered room, who is in it,
 /// and what the host has to do about it. Reached by tapping a day on the
 /// Calendar; ‹ › in the app bar step through days without going back.
@@ -151,7 +230,12 @@ class _DayDetailScreenState extends ConsumerState<DayDetailScreen> {
                     board: b,
                     day: day,
                     filter: _filter,
+                    filters: ref.watch(_boardFiltersProvider).forBoard(b),
                     onFilter: _toggle,
+                    onClearAll: () {
+                      setState(() => _filter = null);
+                      ref.read(_boardFiltersProvider.notifier).clear();
+                    },
                     propertyChip:
                         list.length > 1
                             ? QuickChip(
@@ -179,21 +263,26 @@ class _Body extends StatelessWidget {
     required this.board,
     required this.day,
     required this.filter,
+    required this.filters,
     required this.onFilter,
+    required this.onClearAll,
     this.propertyChip,
   });
 
   final DayBoard board;
   final DateTime day;
   final _Filter? filter;
+  final _BoardFilters filters;
   final ValueChanged<_Filter> onFilter;
+  final VoidCallback onClearAll;
   final Widget? propertyChip;
 
   @override
   Widget build(BuildContext context) {
+    final show = _Shown(filter, filters, day);
     final sections = [
       for (final s in board.roomTypes)
-        if (_visible(s)) s,
+        if (show.section(s)) s,
     ];
 
     return ListView(
@@ -208,6 +297,8 @@ class _Body extends StatelessWidget {
           filter: filter,
           onFilter: onFilter,
         ),
+        const SizedBox(height: 12),
+        _FilterBar(board: board, filters: filters),
         if (board.summary.unassigned > 0 &&
             (filter == null || filter == _Filter.booked)) ...[
           const SizedBox(height: 10),
@@ -222,28 +313,96 @@ class _Body extends StatelessWidget {
             ),
           )
         else if (sections.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 40),
+          Padding(
+            padding: const EdgeInsets.only(top: 40),
             child: EmptyState(
               message: 'ບໍ່ມີລາຍການທີ່ຕົງກັບຕົວກອງນີ້',
               icon: Icons.filter_alt_off_outlined,
+              action: TextButton(
+                onPressed: onClearAll,
+                child: const Text('ລ້າງຕົວກອງທັງໝົດ'),
+              ),
             ),
           )
         else
-          for (final s in sections)
-            _RoomTypeSection(section: s, day: day, filter: filter),
+          for (final s in sections) _RoomTypeSection(section: s, show: show),
       ],
     );
   }
+}
 
-  bool _visible(DayRoomTypeSection s) {
-    if (filter == null) return true;
-    if (s.hasRoomNumbers) {
-      final unassigned = filter == _Filter.booked && s.unassigned.isNotEmpty;
-      return unassigned || s.rooms.any((r) => _roomMatches(filter!, r, day));
+/// Whether each part of the board is shown under the current filters: the
+/// summary tile (what a room is doing) and the filter bar (which bookings,
+/// which room type). All of them must agree.
+class _Shown {
+  const _Shown(this.tile, this.filters, this.day);
+
+  final _Filter? tile;
+  final _BoardFilters filters;
+  final DateTime day;
+
+  bool get isFiltered => tile != null || filters.onBookings;
+
+  bool room(DayRoom r) =>
+      (tile == null || _roomMatches(tile!, r, day)) &&
+      (!filters.onBookings ||
+          _roomBookings(tile, r).any((b) => _bookingPasses(filters, b)));
+
+  bool booking(DayBooking b) =>
+      (tile == null || _bookingMatches(tile!, b, day)) &&
+      _bookingPasses(filters, b);
+
+  /// Bookings still waiting for a room number — only ever "booked", so any
+  /// other tile hides them.
+  List<DayBooking> unassigned(DayRoomTypeSection s) =>
+      tile == null || tile == _Filter.booked
+          ? [
+            for (final b in s.unassigned)
+              if (_bookingPasses(filters, b)) b,
+          ]
+          : const [];
+
+  bool section(DayRoomTypeSection s) {
+    if (filters.roomTypeId != null && s.roomTypeId != filters.roomTypeId) {
+      return false;
     }
-    return s.bookings.any((b) => _bookingMatches(filter!, b, day));
+    if (!isFiltered) return true;
+    if (unassigned(s).isNotEmpty) return true;
+    return s.hasRoomNumbers ? s.rooms.any(room) : s.bookings.any(booking);
   }
+}
+
+/// The bookings on a room that a tile is asking about: "arrivals" means who is
+/// arriving, not who left the same room that morning.
+List<DayBooking> _roomBookings(_Filter? tile, DayRoom r) => [
+  if (tile != _Filter.departures && r.occupant != null) r.occupant!,
+  if (tile != _Filter.booked &&
+      tile != _Filter.arrivals &&
+      r.departure != null)
+    r.departure!,
+];
+
+bool _bookingPasses(_BoardFilters f, DayBooking b) {
+  if (f.source != null && b.source != f.source) return false;
+  final paid = b.paymentStatus == 'paid';
+  switch (f.payment) {
+    case _Payment.all:
+      break;
+    case _Payment.paid:
+      if (b.isWalkIn || !paid) return false;
+    case _Payment.unpaid:
+      if (b.isWalkIn || paid) return false;
+  }
+  final q = f.query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  if (b.guestName.toLowerCase().contains(q) ||
+      b.code.toLowerCase().contains(q)) {
+    return true;
+  }
+  // "020 5555 1234" and "+856 20 55551234" are the same phone.
+  final digits = q.replaceAll(RegExp(r'\D'), '');
+  return digits.length >= 3 &&
+      (b.guestPhone ?? '').replaceAll(RegExp(r'\D'), '').contains(digits);
 }
 
 bool _roomMatches(_Filter f, DayRoom r, DateTime day) {
@@ -359,6 +518,352 @@ class _SummaryStrip extends StatelessWidget {
   }
 }
 
+// ── filter bar ──────────────────────────────────────────────────────────────
+
+/// How many of the day's bookings came each way, for the channel chips.
+({int online, int walkIn}) _sourceCounts(DayBoard board) {
+  final seen = <String, DayBooking>{};
+  for (final s in board.roomTypes) {
+    for (final r in s.rooms) {
+      for (final b in [r.occupant, r.departure]) {
+        if (b != null) seen[b.bookingId] = b;
+      }
+    }
+    for (final b in [...s.unassigned, ...s.bookings]) {
+      seen[b.bookingId] = b;
+    }
+  }
+  return (
+    online: seen.values.where((b) => b.isOnline).length,
+    walkIn: seen.values.where((b) => b.isWalkIn).length,
+  );
+}
+
+/// Two rows under the summary: the booking channel, then room type, payment
+/// and search. The search field only opens when asked for, so an unfiltered
+/// day stays two short rows of chips.
+class _FilterBar extends ConsumerStatefulWidget {
+  const _FilterBar({required this.board, required this.filters});
+
+  final DayBoard board;
+  final _BoardFilters filters;
+
+  @override
+  ConsumerState<_FilterBar> createState() => _FilterBarState();
+}
+
+class _FilterBarState extends ConsumerState<_FilterBar> {
+  late final _search = TextEditingController(text: widget.filters.query);
+  late bool _searching = widget.filters.query.isNotEmpty;
+
+  @override
+  void didUpdateWidget(_FilterBar old) {
+    super.didUpdateWidget(old);
+    // Cleared from outside the bar — "ລ້າງຕົວກອງທັງໝົດ" under an empty result.
+    if (widget.filters.query.isEmpty && _search.text.isNotEmpty) {
+      _search.clear();
+      _searching = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  _BoardFiltersNotifier get _set => ref.read(_boardFiltersProvider.notifier);
+
+  void _closeSearch() {
+    _search.clear();
+    _set.setQuery('');
+    setState(() => _searching = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final f = widget.filters;
+    final counts = _sourceCounts(widget.board);
+    final types = widget.board.roomTypes;
+    final typeName =
+        types.where((s) => s.roomTypeId == f.roomTypeId).firstOrNull?.roomTypeName;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Equal thirds of the width rather than a scrolling row: these are the
+        // chips this bar exists for, and on a 360dp phone a row of them pushed
+        // Walk-in off the screen.
+        Row(
+          children: [
+            Expanded(
+              child: _Chip(
+                label: 'ທັງໝົດ',
+                selected: f.source == null,
+                expanded: true,
+                onTap: () => _set.setSource(null),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _Chip(
+                icon: Icons.language,
+                label: 'ຈອງ Online · ${counts.online}',
+                selected: f.source == 'app',
+                expanded: true,
+                onTap: () => _set.setSource(f.source == 'app' ? null : 'app'),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _Chip(
+                icon: Icons.storefront_outlined,
+                label: 'Walk-in · ${counts.walkIn}',
+                selected: f.source == 'walk_in',
+                expanded: true,
+                onTap:
+                    () => _set.setSource(
+                      f.source == 'walk_in' ? null : 'walk_in',
+                    ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _ChipRow(
+          children: [
+            if (types.length > 1)
+              _MenuChip<String>(
+                label: typeName ?? 'ປະເພດຫ້ອງ',
+                selected: f.roomTypeId != null,
+                value: f.roomTypeId ?? '',
+                options: [
+                  ('', 'ທຸກປະເພດຫ້ອງ'),
+                  for (final s in types) (s.roomTypeId, s.roomTypeName),
+                ],
+                onSelected: (v) => _set.setRoomType(v.isEmpty ? null : v),
+              ),
+            _MenuChip<_Payment>(
+              label: switch (f.payment) {
+                _Payment.all => 'ການຈ່າຍ',
+                _Payment.paid => 'ຈ່າຍແລ້ວ',
+                _Payment.unpaid => 'ຍັງບໍ່ຈ່າຍ',
+              },
+              selected: f.payment != _Payment.all,
+              value: f.payment,
+              options: const [
+                (_Payment.all, 'ທັງໝົດ'),
+                (_Payment.paid, 'ຈ່າຍແລ້ວ'),
+                (_Payment.unpaid, 'ຍັງບໍ່ຈ່າຍ'),
+              ],
+              onSelected: _set.setPayment,
+            ),
+            _Chip(
+              icon: Icons.search,
+              label: f.query.trim().isEmpty ? 'ຄົ້ນຫາ' : '"${f.query.trim()}"',
+              selected: _searching || f.query.trim().isNotEmpty,
+              onTap:
+                  () =>
+                      _searching
+                          ? _closeSearch()
+                          : setState(() => _searching = true),
+            ),
+            if (f.any)
+              TextButton(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                onPressed: () {
+                  _search.clear();
+                  setState(() => _searching = false);
+                  _set.clear();
+                },
+                child: const Text('ລ້າງ'),
+              ),
+          ],
+        ),
+        if (_searching) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: _search,
+            autofocus: true,
+            onChanged: _set.setQuery,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'ຊື່ແຂກ, ເບີໂທ ຫຼື ລະຫັດການຈອງ',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: IconButton(
+                tooltip: 'ປິດ',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: _closeSearch,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A row of chips that scrolls sideways instead of wrapping onto a third line
+/// on a narrow phone.
+class _ChipRow extends StatelessWidget {
+  const _ChipRow({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final (i, c) in children.indexed) ...[
+            if (i > 0) const SizedBox(width: 6),
+            c,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// What a chip looks like — shared by the tap-to-toggle [_Chip] and the
+/// drop-down [_MenuChip], which cannot nest one tap target inside another.
+class _ChipFace extends StatelessWidget {
+  const _ChipFace({
+    required this.label,
+    required this.selected,
+    this.icon,
+    this.dropdown = false,
+    this.expanded = false,
+  });
+
+  final String label;
+  final bool selected;
+  final IconData? icon;
+  final bool dropdown;
+
+  /// Fills the width it is given, content centred, text shortened to fit.
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? C.accentDark : C.soft;
+    final text = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: fg),
+    );
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: expanded ? 8 : 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: selected ? C.accentSoft : C.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: selected ? C.accent : C.border),
+      ),
+      child: Row(
+        mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: fg),
+            const SizedBox(width: 5),
+          ],
+          if (expanded)
+            Flexible(child: text)
+          else
+            // A long room type name must not push the other chips away.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 130),
+              child: text,
+            ),
+          if (dropdown) ...[
+            const SizedBox(width: 2),
+            Icon(Icons.expand_more, size: 16, color: fg),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+    this.expanded = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: _ChipFace(
+        label: label,
+        selected: selected,
+        icon: icon,
+        expanded: expanded,
+      ),
+    );
+  }
+}
+
+/// A chip that opens a short list to pick from. `T` is never null: the
+/// "everything" entry is a real value, because a menu treats picking null as
+/// dismissing it.
+class _MenuChip<T extends Object> extends StatelessWidget {
+  const _MenuChip({
+    required this.label,
+    required this.selected,
+    required this.value,
+    required this.options,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<T>(
+      tooltip: '',
+      initialValue: value,
+      onSelected: onSelected,
+      position: PopupMenuPosition.under,
+      itemBuilder:
+          (_) => [
+            for (final (v, text) in options)
+              PopupMenuItem<T>(
+                value: v,
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontWeight: v == value ? FontWeight.w800 : FontWeight.w500,
+                    color: v == value ? C.accentDark : C.text,
+                  ),
+                ),
+              ),
+          ],
+      child: _ChipFace(label: label, selected: selected, dropdown: true),
+    );
+  }
+}
+
 class _UnassignedBanner extends StatelessWidget {
   const _UnassignedBanner({required this.count});
   final int count;
@@ -394,29 +899,23 @@ class _UnassignedBanner extends StatelessWidget {
 // ── room types ──────────────────────────────────────────────────────────────
 
 class _RoomTypeSection extends StatelessWidget {
-  const _RoomTypeSection({
-    required this.section,
-    required this.day,
-    required this.filter,
-  });
+  const _RoomTypeSection({required this.section, required this.show});
 
   final DayRoomTypeSection section;
-  final DateTime day;
-  final _Filter? filter;
+  final _Shown show;
 
   @override
   Widget build(BuildContext context) {
+    final day = show.day;
     final rooms = [
       for (final r in section.rooms)
-        if (filter == null || _roomMatches(filter!, r, day)) r,
+        if (show.room(r)) r,
     ];
     final bookings = [
       for (final b in section.bookings)
-        if (filter == null || _bookingMatches(filter!, b, day)) b,
+        if (show.booking(b)) b,
     ];
-    final showUnassigned =
-        section.unassigned.isNotEmpty &&
-        (filter == null || filter == _Filter.booked);
+    final unassigned = show.unassigned(section);
 
     return Padding(
       padding: const EdgeInsets.only(top: 18),
@@ -425,15 +924,15 @@ class _RoomTypeSection extends StatelessWidget {
         children: [
           _SectionHeader(section: section),
           const SizedBox(height: 10),
-          if (showUnassigned) ...[
-            _UnassignedCard(bookings: section.unassigned),
+          if (unassigned.isNotEmpty) ...[
+            _UnassignedCard(bookings: unassigned),
             const SizedBox(height: 8),
           ],
           if (section.hasRoomNumbers)
             for (final room in rooms)
               _RoomCard(room: room, section: section, day: day)
           else ...[
-            if (filter == null) _NoRoomNumbersNote(section: section),
+            if (!show.isFiltered) _NoRoomNumbersNote(section: section),
             for (final b in bookings)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -855,6 +1354,32 @@ class _GuestBlock extends StatelessWidget {
     ),
   );
 
+  /// How the guest booked — the same pill as [_badge], with an icon so the two
+  /// read apart at a glance.
+  Widget _sourceBadge(IconData icon, String label, Color bg, Color fg) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: fg),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final b = booking;
@@ -912,6 +1437,20 @@ class _GuestBlock extends StatelessWidget {
                         map: paymentStatusPill,
                         status: b.paymentStatus,
                         compact: true,
+                      ),
+                    if (b.isOnline)
+                      _sourceBadge(
+                        Icons.language,
+                        'ຈອງ Online',
+                        C.accentSoft,
+                        C.accentDark,
+                      ),
+                    if (b.isWalkIn)
+                      _sourceBadge(
+                        Icons.storefront_outlined,
+                        'Walk-in',
+                        C.infoBg,
+                        C.infoFg,
                       ),
                   ],
                 ),
