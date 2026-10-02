@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/overbooked_dialog.dart';
 import '../widgets/property_picker.dart';
 
 /// What the summary chips filter the room list by.
@@ -1197,7 +1198,7 @@ class _RoomCard extends ConsumerWidget {
           onPressed:
               () => _run(
                 context,
-                () => actions.updateRoom(room.roomId, status: 'available'),
+                () async => actions.updateRoom(room.roomId, status: 'available'),
                 'ເປີດໃຊ້ຫ້ອງ ${room.roomNumber} ແລ້ວ',
               ),
           child: const Text('ເປີດໃຊ້'),
@@ -1242,8 +1243,10 @@ class _RoomCard extends ConsumerWidget {
               onSelected:
                   (_) => _run(
                     context,
-                    () =>
-                        actions.updateRoom(room.roomId, status: 'maintenance'),
+                    () async {
+                      final r = await actions.updateRoom(room.roomId, status: 'maintenance');
+                      if (context.mounted) await warnIfOverbooked(context, r.overbooked);
+                    },
                     'ປິດຫ້ອງ ${room.roomNumber} ເພື່ອບຳລຸງຮັກສາ',
                   ),
               itemBuilder:

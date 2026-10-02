@@ -774,7 +774,10 @@ class PartnerActions {
   /// how a partner pulls this one room off sale without touching the room
   /// type's aggregate count. Every field is optional so the caller sends only
   /// what changed.
-  Future<RoomUnit> updateRoom(
+  ///
+  /// A status change can leave fewer rooms than guests on some future night;
+  /// those nights come back in `overbooked` (see [warnIfOverbooked]).
+  Future<({RoomUnit room, List<OverbookedNight> overbooked})> updateRoom(
     String roomId, {
     String? roomNumber,
     String? floor,
@@ -790,18 +793,23 @@ class PartnerActions {
     );
     ref.invalidate(propertiesProvider);
     _invalidateCalendar();
-    return RoomUnit.fromJson(Map<String, dynamic>.from(data as Map));
+    return (
+      room: RoomUnit.fromJson(Map<String, dynamic>.from(data as Map)),
+      overbooked: OverbookedNight.listFrom(data),
+    );
   }
 
   /// Same deactivate-instead-of-delete shape as [deleteRoomType]: a room with
   /// booking history comes back `deactivated: true` rather than gone, and that
   /// counts as success. Either way the refreshed property list already shows
   /// the resulting state, so the caller only needs this for the message.
-  Future<bool> deleteRoom(String roomId) async {
+  Future<({bool deleted, List<OverbookedNight> overbooked})> deleteRoom(String roomId) async {
     final data = await _api.delete<dynamic>('/partner/rooms/$roomId');
     ref.invalidate(propertiesProvider);
+    // One room fewer to sell: the nightly counts were lowered too.
+    _invalidateCalendar();
     final j = Map<String, dynamic>.from(data as Map);
-    return j['deleted'] == true;
+    return (deleted: j['deleted'] == true, overbooked: OverbookedNight.listFrom(j));
   }
 
   Future<void> updateProperty(

@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../providers/data.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/overbooked_dialog.dart';
 
 class PropertiesScreen extends ConsumerWidget {
   const PropertiesScreen({super.key});
@@ -696,9 +697,10 @@ class _RoomUnitsScreen extends ConsumerWidget {
     if (room.isInactive) return;
     final next = room.isAvailable ? 'maintenance' : 'available';
     try {
-      await ref.read(actionsProvider).updateRoom(room.id, status: next);
+      final r = await ref.read(actionsProvider).updateRoom(room.id, status: next);
       if (context.mounted) {
         showMessage(context, next == 'maintenance' ? 'ປິດຊົ່ວຄາວແລ້ວ' : 'ເປີດໃຊ້ຄືນແລ້ວ');
+        await warnIfOverbooked(context, r.overbooked);
       }
     } on ApiException catch (e) {
       if (context.mounted) showMessage(context, e.message, error: true);
@@ -944,12 +946,14 @@ class _RoomUnitSheetState extends ConsumerState<_RoomUnitSheet> {
     if (!_isCreate) {
       setState(() => _busy = true);
       try {
-        await actions.updateRoom(
+        final r = await actions.updateRoom(
           widget.room!.id,
           roomNumber: _roomNumber.text.trim(),
           floor: floor,
           status: _status,
         );
+        // Before closing the sheet: the warning needs this context alive.
+        if (mounted) await warnIfOverbooked(context, r.overbooked);
         if (mounted) Navigator.of(context).pop(true);
       } on ApiException catch (e) {
         if (mounted) showMessage(context, e.message, error: true);
@@ -1018,10 +1022,11 @@ class _RoomUnitSheetState extends ConsumerState<_RoomUnitSheet> {
 
     setState(() => _busy = true);
     try {
-      final deleted = await ref.read(actionsProvider).deleteRoom(room.id);
+      final r = await ref.read(actionsProvider).deleteRoom(room.id);
+      if (mounted) await warnIfOverbooked(context, r.overbooked);
       if (mounted) {
         Navigator.of(context).pop(true);
-        showMessage(context, deleted ? 'ລຶບຫ້ອງແລ້ວ' : 'ປິດໃຊ້ງານຫ້ອງແລ້ວ (ມີປະຫວັດການຈອງ)');
+        showMessage(context, r.deleted ? 'ລຶບຫ້ອງແລ້ວ' : 'ປິດໃຊ້ງານຫ້ອງແລ້ວ (ມີປະຫວັດການຈອງ)');
       }
     } on ApiException catch (e) {
       if (mounted) showMessage(context, e.message, error: true);

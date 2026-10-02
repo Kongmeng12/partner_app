@@ -1,8 +1,9 @@
 /// A numbered physical room under a room type — "204", "206".
 ///
-/// `RoomType.totalRooms` stays the nightly sale ceiling regardless of how many
-/// of these exist or what their statuses are — numbering is bookkeeping under
-/// that count, not a replacement for it. The one place a room's number reaches
+/// Once a room type has numbered rooms, the rooms in service (available or
+/// needing cleaning — not maintenance or inactive) are a second sale ceiling
+/// beside `RoomType.totalRooms`: the API never sells more nights than there
+/// are rooms to sleep in, and refuses a nightly count above them. The one place a room's number reaches
 /// a guest is when its room type has `allowRoomSelection` on, letting them pick
 /// a specific number at booking time instead of just a type.
 ///
@@ -127,4 +128,34 @@ int _naturalCompare(String a, String b) {
   final bn = int.tryParse(b);
   if (an != null && bn != null) return an.compareTo(bn);
   return a.compareTo(b);
+}
+
+/// A future night that, after a room left service (maintenance, deactivated,
+/// deleted), has more guests booked than rooms left to put them in. The API
+/// never cancels a guest to fix it — it reports the night so the property can:
+/// reopen a room, move a guest, or contact them.
+class OverbookedNight {
+  const OverbookedNight({required this.date, required this.rooms, required this.sold});
+
+  /// `YYYY-MM-DD`.
+  final String date;
+  final int rooms;
+  final int sold;
+
+  factory OverbookedNight.fromJson(Map<String, dynamic> j) => OverbookedNight(
+    date: j['date']?.toString() ?? '',
+    rooms: (j['rooms'] as num?)?.toInt() ?? 0,
+    sold: (j['sold'] as num?)?.toInt() ?? 0,
+  );
+
+  /// The `overbooked` list a room update or delete answers with; empty when
+  /// the response has none.
+  static List<OverbookedNight> listFrom(Object? data) {
+    final raw = data is Map ? data['overbooked'] : null;
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => OverbookedNight.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
 }
