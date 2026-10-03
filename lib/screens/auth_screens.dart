@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInputFormatter;
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter, TextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 
 import '../providers/auth.dart';
 import '../providers/data.dart';
@@ -37,7 +38,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_form.currentState!.validate()) return;
     setState(() => _busy = true);
 
-    final ok = await ref.read(authProvider.notifier).signIn(_email.text, _password.text);
+    final ok = await ref
+        .read(authProvider.notifier)
+        .signIn(_email.text, _password.text);
 
     if (!mounted) return;
     setState(() => _busy = false);
@@ -50,109 +53,292 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+
     return Scaffold(
-      body: SafeArea(
+      backgroundColor: C.bg,
+      body: SingleChildScrollView(
         child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _form,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 24),
-                    Container(
-                      width: 62,
-                      height: 62,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: C.accent,
-                        borderRadius: BorderRadius.circular(R.lg),
-                      ),
-                      child: const Text(
-                        'LS',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'PhaPhak Partner',
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'ຈັດການທີ່ພັກ ແລະ ການຈອງຂອງທ່ານ',
-                      style: TextStyle(color: C.muted, fontSize: 14),
-                    ),
-                    const SizedBox(height: 30),
-                    TextFormField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: 'ອີເມວ',
-                        prefixIcon: Icon(Icons.alternate_email, size: 20),
-                      ),
-                      validator: (v) =>
-                          (v == null || !v.contains('@')) ? 'ໃສ່ອີເມວໃຫ້ຖືກຕ້ອງ' : null,
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: _password,
-                      obscureText: _obscure,
-                      decoration: InputDecoration(
-                        labelText: 'ລະຫັດຜ່ານ',
-                        prefixIcon: const Icon(Icons.lock_outline, size: 20),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                            size: 20,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Stack(
+              children: [
+                _LoginHeader(topInset: topInset),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(20, topInset + 236, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _loginCard(),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'ຍັງບໍ່ມີບັນຊີ?',
+                            style: TextStyle(color: C.muted, fontSize: 13.5),
                           ),
-                          onPressed: () => setState(() => _obscure = !_obscure),
-                        ),
+                          TextButton(
+                            onPressed:
+                                _busy ? null : () => context.push('/register'),
+                            child: const Text(
+                              'ສະໝັກເປັນ Partner',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
                       ),
-                      onFieldSubmitted: (_) => _submit(),
-                      validator: (v) =>
-                          (v == null || v.length < 8) ? 'ລະຫັດຜ່ານຢ່າງໜ້ອຍ 8 ຕົວອັກສອນ' : null,
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _busy ? null : () => context.push('/forgot-password'),
-                        child: const Text('ລືມລະຫັດຜ່ານ?'),
+                      const SizedBox(height: 4),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.lock_outline, size: 13, color: C.faint),
+                          SizedBox(width: 5),
+                          Text(
+                            'ເຊື່ອມຕໍ່ແບບປອດໄພ · © PhaPhak',
+                            style: TextStyle(color: C.faint, fontSize: 11.5),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('ເຂົ້າສູ່ລະບົບ'),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: _busy ? null : () => context.push('/register'),
-                      child: const Text('ສະໝັກເປັນ Partner'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
+
+  /// The white card the form sits on, lifted over the curve of the header.
+  Widget _loginCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+      decoration: BoxDecoration(
+        color: C.surface,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A3A2A1E),
+            blurRadius: 32,
+            offset: Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'ຍິນດີຕ້ອນຮັບກັບມາ',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: C.text,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'ເຂົ້າສູ່ລະບົບເພື່ອຈັດການທີ່ພັກ ແລະ ການຈອງຂອງທ່ານ',
+              style: TextStyle(color: C.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 22),
+            TextFormField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'ອີເມວ',
+                prefixIcon: Icon(Icons.alternate_email, size: 20),
+              ),
+              validator:
+                  (v) =>
+                      (v == null || !v.contains('@'))
+                          ? 'ໃສ່ອີເມວໃຫ້ຖືກຕ້ອງ'
+                          : null,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _password,
+              obscureText: _obscure,
+              decoration: InputDecoration(
+                labelText: 'ລະຫັດຜ່ານ',
+                prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              onFieldSubmitted: (_) => _submit(),
+              validator:
+                  (v) =>
+                      (v == null || v.length < 8)
+                          ? 'ລະຫັດຜ່ານຢ່າງໜ້ອຍ 8 ຕົວອັກສອນ'
+                          : null,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed:
+                    _busy ? null : () => context.push('/forgot-password'),
+                child: const Text('ລືມລະຫັດຜ່ານ?'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              onPressed: _busy ? null : _submit,
+              child:
+                  _busy
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('ເຂົ້າສູ່ລະບົບ'),
+                          SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_rounded, size: 19),
+                        ],
+                      ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The orange top of the sign-in screen: the PhaPhak mark on a white ring,
+/// the name, and a soft curve the form card overlaps.
+class _LoginHeader extends StatelessWidget {
+  const _LoginHeader({required this.topInset});
+
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipPath(
+      clipper: _BottomCurve(),
+      child: Container(
+        height: topInset + 300,
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFF6A3D), C.accent, C.accentDark],
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Two faint rings for depth — decoration only.
+            Positioned(right: -60, top: topInset - 40, child: _ring(200)),
+            Positioned(left: -50, top: topInset + 150, child: _ring(140)),
+            Padding(
+              padding: EdgeInsets.fromLTRB(28, topInset + 36, 28, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x33000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 74,
+                        height: 74,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'PhaPhak Partner',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'ຈັດການທີ່ພັກ ແລະ ການຈອງຂອງທ່ານ ໃນທີ່ດຽວ',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ring(double size) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: Colors.white.withValues(alpha: 0.12),
+        width: 22,
+      ),
+    ),
+  );
+}
+
+class _BottomCurve extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) =>
+      Path()
+        ..lineTo(0, size.height - 56)
+        ..quadraticBezierTo(
+          size.width * 0.5,
+          size.height + 28,
+          size.width,
+          size.height - 56,
+        )
+        ..lineTo(size.width, 0)
+        ..close();
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 /// The application form. Creates the partner **and** their first property in
@@ -188,7 +374,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     for (final key in _order)
       if (!_nonText.contains(key)) key: TextEditingController(),
   };
-  final _keys = {for (final key in _order) key: GlobalKey<FormFieldState<dynamic>>()};
+  final _keys = {
+    for (final key in _order) key: GlobalKey<FormFieldState<dynamic>>(),
+  };
   late final _focus = {
     for (final key in _fields.keys) _keys[key]!: FocusNode(),
   };
@@ -238,15 +426,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     setState(() => _triedSubmit = true);
     final fieldsOk = _form.currentState!.validate();
     if (!fieldsOk || !_acceptedTerms) {
-      if (!jumpToFirstError([for (final k in _order) _keys[k]!], focus: _focus)) {
+      if (!jumpToFirstError([
+        for (final k in _order) _keys[k]!,
+      ], focus: _focus)) {
         final terms = _termsKey.currentContext;
         if (terms != null) {
-          Scrollable.ensureVisible(terms, duration: const Duration(milliseconds: 250), alignment: 0.5);
+          Scrollable.ensureVisible(
+            terms,
+            duration: const Duration(milliseconds: 250),
+            alignment: 0.5,
+          );
         }
       }
       showMessage(
         context,
-        fieldsOk ? 'ກະລຸນາຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ' : 'ກະລຸນາແກ້ຊ່ອງທີ່ເປັນສີແດງ',
+        fieldsOk
+            ? 'ກະລຸນາຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ'
+            : 'ກະລຸນາແກ້ຊ່ອງທີ່ເປັນສີແດງ',
         error: true,
       );
       return;
@@ -325,40 +521,87 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     title: 'ບັນຊີຂອງທ່ານ',
                     child: Column(
                       children: [
-                        _text('email', 'ອີເມວ',
-                            keyboard: TextInputType.emailAddress,
-                            hint: 'name@gmail.com',
-                            validator: (v) => _need(v, 'ອີເມວ') ??
-                                (looksLikeEmail(v!) ? null : 'ອີເມວບໍ່ຖືກຕ້ອງ ເຊັ່ນ name@gmail.com')),
-                        _text('password', 'ລະຫັດຜ່ານ',
-                            obscure: true,
-                            onChanged: (_) {
-                              setState(() {});
-                              if (_fields['confirmPassword']!.text.isNotEmpty) {
-                                _keys['confirmPassword']!.currentState?.validate();
-                              }
-                            },
-                            validator: (v) => _need(v, 'ລະຫັດຜ່ານ') ??
-                                (isStrongPassword(v!) ? null : 'ລະຫັດຜ່ານຍັງບໍ່ຄົບເງື່ອນໄຂຂ້າງລຸ່ມ')),
+                        _text(
+                          'email',
+                          'ອີເມວ',
+                          keyboard: TextInputType.emailAddress,
+                          hint: 'name@gmail.com',
+                          validator:
+                              (v) =>
+                                  _need(v, 'ອີເມວ') ??
+                                  (looksLikeEmail(v!)
+                                      ? null
+                                      : 'ອີເມວບໍ່ຖືກຕ້ອງ ເຊັ່ນ name@gmail.com'),
+                        ),
+                        _text(
+                          'password',
+                          'ລະຫັດຜ່ານ',
+                          obscure: true,
+                          onChanged: (_) {
+                            setState(() {});
+                            if (_fields['confirmPassword']!.text.isNotEmpty) {
+                              _keys['confirmPassword']!.currentState
+                                  ?.validate();
+                            }
+                          },
+                          validator:
+                              (v) =>
+                                  _need(v, 'ລະຫັດຜ່ານ') ??
+                                  (isStrongPassword(v!)
+                                      ? null
+                                      : 'ລະຫັດຜ່ານຍັງບໍ່ຄົບເງື່ອນໄຂຂ້າງລຸ່ມ'),
+                        ),
                         PasswordChecklist(password: _fields['password']!.text),
-                        _text('confirmPassword', 'ຢືນຢັນລະຫັດຜ່ານ',
-                            obscure: true,
-                            onChanged: (_) => setState(() {}),
-                            helper: _passwordsMatch ? '✓ ລະຫັດຜ່ານກົງກັນ' : null,
-                            validator: (v) => _need(v, 'ລະຫັດຜ່ານອີກຄັ້ງ') ??
-                                (v != _fields['password']!.text ? 'ລະຫັດຜ່ານບໍ່ກົງກັນ' : null)),
-                        _text('ownerName', 'ຊື່ເຈົ້າຂອງ',
-                            validator: (v) => _need(v, 'ຊື່ເຈົ້າຂອງ') ??
-                                (v!.trim().length < 2 ? 'ຊື່ຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
-                        _text('phone', 'ເບີໂທ',
-                            keyboard: TextInputType.phone,
-                            hint: '020 5555 0001',
-                            formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s]'))],
-                            validator: (v) => _need(v, 'ເບີໂທ') ??
-                                (looksLikePhone(v!) ? null : 'ເບີໂທບໍ່ຖືກຕ້ອງ ເຊັ່ນ 020 5555 0001')),
-                        _text('businessName', 'ຊື່ທຸລະກິດ',
-                            validator: (v) => _need(v, 'ຊື່ທຸລະກິດ') ??
-                                (v!.trim().length < 2 ? 'ຊື່ທຸລະກິດຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
+                        _text(
+                          'confirmPassword',
+                          'ຢືນຢັນລະຫັດຜ່ານ',
+                          obscure: true,
+                          onChanged: (_) => setState(() {}),
+                          helper: _passwordsMatch ? '✓ ລະຫັດຜ່ານກົງກັນ' : null,
+                          validator:
+                              (v) =>
+                                  _need(v, 'ລະຫັດຜ່ານອີກຄັ້ງ') ??
+                                  (v != _fields['password']!.text
+                                      ? 'ລະຫັດຜ່ານບໍ່ກົງກັນ'
+                                      : null),
+                        ),
+                        _text(
+                          'ownerName',
+                          'ຊື່ເຈົ້າຂອງ',
+                          validator:
+                              (v) =>
+                                  _need(v, 'ຊື່ເຈົ້າຂອງ') ??
+                                  (v!.trim().length < 2
+                                      ? 'ຊື່ຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ'
+                                      : null),
+                        ),
+                        _text(
+                          'phone',
+                          'ເບີໂທ',
+                          keyboard: TextInputType.phone,
+                          hint: '020 5555 0001',
+                          formatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9+\-\s]'),
+                            ),
+                          ],
+                          validator:
+                              (v) =>
+                                  _need(v, 'ເບີໂທ') ??
+                                  (looksLikePhone(v!)
+                                      ? null
+                                      : 'ເບີໂທບໍ່ຖືກຕ້ອງ ເຊັ່ນ 020 5555 0001'),
+                        ),
+                        _text(
+                          'businessName',
+                          'ຊື່ທຸລະກິດ',
+                          validator:
+                              (v) =>
+                                  _need(v, 'ຊື່ທຸລະກິດ') ??
+                                  (v!.trim().length < 2
+                                      ? 'ຊື່ທຸລະກິດຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ'
+                                      : null),
+                        ),
                       ],
                     ),
                   ),
@@ -367,19 +610,34 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     title: 'ທີ່ພັກຂອງທ່ານ',
                     child: Column(
                       children: [
-                        _text('propertyName', 'ຊື່ທີ່ພັກ',
-                            validator: (v) => _need(v, 'ຊື່ທີ່ພັກ') ??
-                                (v!.trim().length < 2 ? 'ຊື່ທີ່ພັກຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ' : null)),
+                        _text(
+                          'propertyName',
+                          'ຊື່ທີ່ພັກ',
+                          validator:
+                              (v) =>
+                                  _need(v, 'ຊື່ທີ່ພັກ') ??
+                                  (v!.trim().length < 2
+                                      ? 'ຊື່ທີ່ພັກຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ'
+                                      : null),
+                        ),
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: DropdownButtonFormField<String>(
                             value: _propertyType,
-                            decoration: InputDecoration(label: fieldLabel('ປະເພດທີ່ພັກ', required: true)),
+                            decoration: InputDecoration(
+                              label: fieldLabel('ປະເພດທີ່ພັກ', required: true),
+                            ),
                             items: [
                               for (final e in _types.entries)
-                                DropdownMenuItem(value: e.key, child: Text(e.value)),
+                                DropdownMenuItem(
+                                  value: e.key,
+                                  child: Text(e.value),
+                                ),
                             ],
-                            onChanged: (v) => setState(() => _propertyType = v ?? 'guesthouse'),
+                            onChanged:
+                                (v) => setState(
+                                  () => _propertyType = v ?? 'guesthouse',
+                                ),
                           ),
                         ),
                         _provincePicker(),
@@ -394,15 +652,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     child: Column(
                       children: [
                         _text('bankName', 'ຊື່ທະນາຄານ', required: false),
-                        _text('bankAccount', 'ເລກບັນຊີ',
-                            required: false,
-                            keyboard: TextInputType.number,
-                            // Optional, but a name without a number (or the
-                            // other way round) cannot be saved as an account.
-                            validator: (v) => _fields['bankName']!.text.trim().isNotEmpty &&
-                                    (v ?? '').trim().isEmpty
-                                ? 'ໃສ່ເລກບັນຊີ ຫຼື ລຶບຊື່ທະນາຄານອອກ'
-                                : null),
+                        _text(
+                          'bankAccount',
+                          'ເລກບັນຊີ',
+                          required: false,
+                          keyboard: TextInputType.number,
+                          // Optional, but a name without a number (or the
+                          // other way round) cannot be saved as an account.
+                          validator:
+                              (v) =>
+                                  _fields['bankName']!.text.trim().isNotEmpty &&
+                                          (v ?? '').trim().isEmpty
+                                      ? 'ໃສ່ເລກບັນຊີ ຫຼື ລຶບຊື່ທະນາຄານອອກ'
+                                      : null,
+                        ),
                       ],
                     ),
                   ),
@@ -413,38 +676,50 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   CheckboxListTile(
                     key: _termsKey,
                     value: _acceptedTerms,
-                    onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
+                    onChanged:
+                        (v) => setState(() => _acceptedTerms = v ?? false),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                     isError: _triedSubmit && !_acceptedTerms,
                     title: const Text.rich(
                       TextSpan(
-                        text: 'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
+                        text:
+                            'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
                             'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ຂໍ້ຕົກລົງ Partner',
-                        children: [TextSpan(text: ' *', style: TextStyle(color: C.dangerFg))],
+                        children: [
+                          TextSpan(
+                            text: ' *',
+                            style: TextStyle(color: C.dangerFg),
+                          ),
+                        ],
                       ),
                       style: TextStyle(fontSize: 12.5, height: 1.45),
                     ),
-                    subtitle: _triedSubmit && !_acceptedTerms
-                        ? const Text(
-                            'ຕ້ອງຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ',
-                            style: TextStyle(fontSize: 12, color: C.dangerFg),
-                          )
-                        : null,
+                    subtitle:
+                        _triedSubmit && !_acceptedTerms
+                            ? const Text(
+                              'ຕ້ອງຍອມຮັບເງື່ອນໄຂກ່ອນສົ່ງໃບສະໝັກ',
+                              style: TextStyle(fontSize: 12, color: C.dangerFg),
+                            )
+                            : null,
                   ),
                   const SizedBox(height: 6),
                   // Always pressable: a greyed-out button does not say what
                   // is missing, while a press jumps to the first problem.
                   FilledButton(
                     onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('ສົ່ງໃບສະໝັກ'),
+                    child:
+                        _busy
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                            : const Text('ສົ່ງໃບສະໝັກ'),
                   ),
                   const SizedBox(height: 10),
                   const Text(
@@ -470,38 +745,49 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: provinces.when(
-        loading: () => const InputDecorator(
-          decoration: InputDecoration(labelText: 'ແຂວງ'),
-          child: Text('ກຳລັງໂຫຼດ...', style: TextStyle(color: C.muted)),
-        ),
-        error: (e, _) => InputDecorator(
-          decoration: const InputDecoration(labelText: 'ແຂວງ'),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text('ໂຫຼດລາຍຊື່ແຂວງບໍ່ໄດ້', style: TextStyle(color: C.dangerFg)),
+        loading:
+            () => const InputDecorator(
+              decoration: InputDecoration(labelText: 'ແຂວງ'),
+              child: Text('ກຳລັງໂຫຼດ...', style: TextStyle(color: C.muted)),
+            ),
+        error:
+            (e, _) => InputDecorator(
+              decoration: const InputDecoration(labelText: 'ແຂວງ'),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'ໂຫຼດລາຍຊື່ແຂວງບໍ່ໄດ້',
+                      style: TextStyle(color: C.dangerFg),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => ref.invalidate(provincesProvider),
+                    child: const Text('ລອງໃໝ່'),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () => ref.invalidate(provincesProvider),
-                child: const Text('ລອງໃໝ່'),
+            ),
+        data:
+            (list) => DropdownButtonFormField<String>(
+              key: _keys['province'],
+              value: _provinceId.isEmpty ? null : _provinceId,
+              decoration: InputDecoration(
+                label: fieldLabel('ແຂວງ', required: true),
               ),
-            ],
-          ),
-        ),
-        data: (list) => DropdownButtonFormField<String>(
-          key: _keys['province'],
-          value: _provinceId.isEmpty ? null : _provinceId,
-          decoration: InputDecoration(label: fieldLabel('ແຂວງ', required: true)),
-          items: [
-            for (final p in list) DropdownMenuItem(value: p.id, child: Text(p.name)),
-          ],
-          validator: (v) => (v == null || v.isEmpty) ? 'ກະລຸນາເລືອກແຂວງ' : null,
-          onChanged: (v) => setState(() {
-            _provinceId = v ?? '';
-            // The old district belongs to the old province.
-            _districtId = '';
-          }),
-        ),
+              items: [
+                for (final p in list)
+                  DropdownMenuItem(value: p.id, child: Text(p.name)),
+              ],
+              validator:
+                  (v) => (v == null || v.isEmpty) ? 'ກະລຸນາເລືອກແຂວງ' : null,
+              onChanged:
+                  (v) => setState(() {
+                    _provinceId = v ?? '';
+                    // The old district belongs to the old province.
+                    _districtId = '';
+                  }),
+            ),
       ),
     );
   }
@@ -514,14 +800,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: districts.maybeWhen(
-        data: (list) => DropdownButtonFormField<String>(
-          value: _districtId.isEmpty ? null : _districtId,
-          decoration: const InputDecoration(labelText: 'ເມືອງ'),
-          items: [
-            for (final d in list) DropdownMenuItem(value: d.id, child: Text(d.name)),
-          ],
-          onChanged: (v) => setState(() => _districtId = v ?? ''),
-        ),
+        data:
+            (list) => DropdownButtonFormField<String>(
+              value: _districtId.isEmpty ? null : _districtId,
+              decoration: const InputDecoration(labelText: 'ເມືອງ'),
+              items: [
+                for (final d in list)
+                  DropdownMenuItem(value: d.id, child: Text(d.name)),
+              ],
+              onChanged: (v) => setState(() => _districtId = v ?? ''),
+            ),
         orElse: () => const SizedBox.shrink(),
       ),
     );
@@ -530,20 +818,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   /// The API still takes an address string, so it is built from the chosen
   /// district and province. The pin is what actually locates the property.
   String _addressText() {
-    final province = ref
-        .read(provincesProvider)
-        .value
-        ?.where((p) => p.id == _provinceId)
-        .firstOrNull
-        ?.name;
-    final district = _districtId.isEmpty
-        ? null
-        : ref
-            .read(districtsProvider(_provinceId))
+    final province =
+        ref
+            .read(provincesProvider)
             .value
-            ?.where((d) => d.id == _districtId)
+            ?.where((p) => p.id == _provinceId)
             .firstOrNull
             ?.name;
+    final district =
+        _districtId.isEmpty
+            ? null
+            : ref
+                .read(districtsProvider(_provinceId))
+                .value
+                ?.where((d) => d.id == _districtId)
+                .firstOrNull
+                ?.name;
     final text = [district, province].whereType<String>().join(', ');
     // The DTO wants at least 4 characters. Fall back to the coordinates
     // rather than fail an otherwise complete application.
@@ -560,12 +850,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: FormField<LatLng>(
         key: _keys['location'],
-        validator: (_) =>
-            _location == null ? 'ກະລຸນາປັກໝຸດທີ່ຕັ້ງທີ່ພັກໃນແຜນທີ່' : null,
+        validator:
+            (_) =>
+                _location == null ? 'ກະລຸນາປັກໝຸດທີ່ຕັ້ງທີ່ພັກໃນແຜນທີ່' : null,
         builder: (field) {
           Future<void> pick() async {
             final picked = await Navigator.of(context).push<LatLng>(
-              MaterialPageRoute(builder: (_) => LocationPickerScreen(initial: _location)),
+              MaterialPageRoute(
+                builder: (_) => LocationPickerScreen(initial: _location),
+              ),
             );
             if (picked == null || !mounted) return;
             setState(() => _location = picked);
@@ -592,7 +885,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           // Keyed on the point: MapOptions are only read once,
                           // so a new pin needs a new map to re-centre.
                           key: ValueKey(location),
-                          options: MapOptions(initialCenter: location, initialZoom: 15),
+                          options: MapOptions(
+                            initialCenter: location,
+                            initialZoom: 15,
+                          ),
                           children: [
                             mapTiles(),
                             MarkerLayer(markers: [pinMarker(location)]),
@@ -616,7 +912,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         : Icons.edit_location_alt_outlined,
                     size: 18,
                   ),
-                  label: Text(location == null ? 'ເລືອກໃນແຜນທີ່' : 'ປ່ຽນທີ່ຕັ້ງ'),
+                  label: Text(
+                    location == null ? 'ເລືອກໃນແຜນທີ່' : 'ປ່ຽນທີ່ຕັ້ງ',
+                  ),
                 ),
               ],
             ),
@@ -671,15 +969,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           errorMaxLines: 2,
           // The same eye as the login screen, shared by both password
           // fields so the pair can be compared at a glance.
-          suffixIcon: obscure
-              ? IconButton(
-                  icon: Icon(
-                    _showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _showPassword = !_showPassword),
-                )
-              : null,
+          suffixIcon:
+              obscure
+                  ? IconButton(
+                    icon: Icon(
+                      _showPassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 20,
+                    ),
+                    onPressed:
+                        () => setState(() => _showPassword = !_showPassword),
+                  )
+                  : null,
         ),
         validator: validator ?? (v) => required ? _need(v, label) : null,
       ),
@@ -713,8 +1015,15 @@ class PendingApprovalScreen extends ConsumerWidget {
                     width: 76,
                     height: 76,
                     alignment: Alignment.center,
-                    decoration: const BoxDecoration(color: C.warnBg, shape: BoxShape.circle),
-                    child: const Icon(Icons.hourglass_top_rounded, color: C.warnFg, size: 34),
+                    decoration: const BoxDecoration(
+                      color: C.warnBg,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.hourglass_top_rounded,
+                      color: C.warnFg,
+                      size: 34,
+                    ),
                   ),
                   const SizedBox(height: 22),
                   const Text(
@@ -728,18 +1037,26 @@ class PendingApprovalScreen extends ConsumerWidget {
                     'ທີມງານ PhaPhak ກຳລັງກວດສອບໃບສະໝັກຂອງທ່ານ. '
                     'ເມື່ອຜ່ານແລ້ວ ທ່ານຈະຕັ້ງລາຄາ ແລະ ຮັບການຈອງໄດ້ທັນທີ.',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: C.soft, fontSize: 14, height: 1.6),
+                    style: const TextStyle(
+                      color: C.soft,
+                      fontSize: 14,
+                      height: 1.6,
+                    ),
                   ),
                   const SizedBox(height: 26),
                   FilledButton.icon(
-                    onPressed: () => ref.read(authProvider.notifier).refreshPartner(),
+                    onPressed:
+                        () => ref.read(authProvider.notifier).refreshPartner(),
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('ກວດສະຖານະອີກຄັ້ງ'),
                   ),
                   const SizedBox(height: 10),
                   TextButton(
                     onPressed: () => ref.read(authProvider.notifier).signOut(),
-                    child: const Text('ອອກຈາກລະບົບ', style: TextStyle(color: C.muted)),
+                    child: const Text(
+                      'ອອກຈາກລະບົບ',
+                      style: TextStyle(color: C.muted),
+                    ),
                   ),
                 ],
               ),
@@ -776,6 +1093,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) => const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: C.accent)),
-      );
+    body: Center(child: CircularProgressIndicator(color: C.accent)),
+  );
 }
