@@ -88,30 +88,30 @@ class DashboardScreen extends ConsumerWidget {
               ],
 
               const SizedBox(height: 24),
+              // Each count sits on the header it belongs to, not on a row of its
+              // own: "guest chose" beside today's arrivals, "property chooses"
+              // beside the rooms waiting to be assigned — or here too when that
+              // section is hidden, so the number never disappears. A zero says
+              // nothing and is left out.
               _SectionHeader(
                 title: 'ແຂກເຂົ້າພັກມື້ນີ້',
                 actionLabel: 'ທັງໝົດ',
                 onAction: () => context.go('/bookings'),
-              ),
-              if (d.guestChoseCount + d.propertyChoosesCount > 0) ...[
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
+                trailing: [
+                  if (d.guestChoseCount > 0)
                     _CountChip(
                       icon: Icons.person_outline,
-                      label: 'ແຂກເລືອກຫ້ອງເອງ',
+                      label: 'ແຂກເລືອກເອງ',
                       count: d.guestChoseCount,
                     ),
+                  if (d.roomsToAssignCount == 0 && d.propertyChoosesCount > 0)
                     _CountChip(
                       icon: Icons.apartment_outlined,
-                      label: 'ໂຮງແຮມເລືອກໃຫ້',
+                      label: 'ໂຮງແຮມເລືອກ',
                       count: d.propertyChoosesCount,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-              ],
+                ],
+              ),
               _PlainCard(
                 child: d.arrivals.isEmpty
                     ? const _EmptyLine('ບໍ່ມີແຂກເຂົ້າພັກມື້ນີ້')
@@ -127,7 +127,18 @@ class DashboardScreen extends ConsumerWidget {
 
               if (d.roomsToAssignCount > 0) ...[
                 const SizedBox(height: 24),
-                _SectionHeader(title: 'ລໍຖ້າໂຮງແຮມເລືອກຫ້ອງ', count: d.roomsToAssignCount),
+                _SectionHeader(
+                  title: 'ລໍຖ້າໂຮງແຮມເລືອກຫ້ອງ',
+                  count: d.roomsToAssignCount,
+                  trailing: [
+                    if (d.propertyChoosesCount > 0)
+                      _CountChip(
+                        icon: Icons.apartment_outlined,
+                        label: 'ໂຮງແຮມເລືອກ',
+                        count: d.propertyChoosesCount,
+                      ),
+                  ],
+                ),
                 _PlainCard(
                   child: Column(
                     children: [
@@ -345,12 +356,22 @@ class _Swoosh extends CustomPainter {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, this.count, this.actionLabel, this.onAction});
+  const _SectionHeader({
+    required this.title,
+    this.count,
+    this.actionLabel,
+    this.onAction,
+    this.trailing = const [],
+  });
 
   final String title;
   final int? count;
   final String? actionLabel;
   final VoidCallback? onAction;
+
+  /// Small chips on the title's own line; they shrink (labels ellipsize)
+  /// before the title or the action link ever would.
+  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -380,7 +401,23 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
           ],
-          const Spacer(),
+          // The chips get all the room between the title and the action link,
+          // and shrink only when that runs out (a Spacer beside them would
+          // take half of it and cut the labels for nothing).
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final chip in trailing) ...[
+                    const SizedBox(width: 8),
+                    Flexible(child: chip),
+                  ],
+                ],
+              ),
+            ),
+          ),
           if (actionLabel != null)
             InkWell(
               onTap: onAction,
@@ -492,8 +529,10 @@ class _CountChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Sized to share a section title's line: small, and the label gives way
+    // (ellipsis) before the count does.
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(8, 3, 10, 3),
       decoration: BoxDecoration(
         color: C.surface,
         borderRadius: BorderRadius.circular(99),
@@ -502,13 +541,20 @@ class _CountChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: C.soft),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 12.5, color: C.soft)),
-          const SizedBox(width: 6),
+          Icon(icon, size: 13, color: C.soft),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5, color: C.soft),
+            ),
+          ),
+          const SizedBox(width: 5),
           Text(
             '$count',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.text),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.text),
           ),
         ],
       ),
