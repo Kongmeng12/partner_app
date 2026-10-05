@@ -87,57 +87,18 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               ],
 
-              const SizedBox(height: 24),
-              // Each count sits on the header it belongs to, not on a row of its
-              // own: "guest chose" beside today's arrivals, "property chooses"
-              // beside the rooms waiting to be assigned — or here too when that
-              // section is hidden, so the number never disappears. A zero says
-              // nothing and is left out.
-              _SectionHeader(
-                title: 'ແຂກເຂົ້າພັກມື້ນີ້',
-                actionLabel: 'ທັງໝົດ',
-                onAction: () => context.go('/bookings'),
-                trailing: [
-                  if (d.guestChoseCount > 0)
-                    _CountChip(
-                      icon: Icons.person_outline,
-                      label: 'ແຂກເລືອກເອງ',
-                      count: d.guestChoseCount,
-                    ),
-                  if (d.roomsToAssignCount == 0 && d.propertyChoosesCount > 0)
-                    _CountChip(
-                      icon: Icons.apartment_outlined,
-                      label: 'ໂຮງແຮມເລືອກ',
-                      count: d.propertyChoosesCount,
-                    ),
-                ],
-              ),
-              _PlainCard(
-                child: d.arrivals.isEmpty
-                    ? const _EmptyLine('ບໍ່ມີແຂກເຂົ້າພັກມື້ນີ້')
-                    : Column(
-                        children: [
-                          for (var i = 0; i < d.arrivals.length; i++) ...[
-                            if (i > 0) const Divider(height: 1, color: C.divider),
-                            _ArrivalRow(arrival: d.arrivals[i]),
-                          ],
-                        ],
-                      ),
-              ),
+              // Today's arrivals in two lists by who picks the numbered room,
+              // each shown only while it has someone in it. Arrivals with no
+              // numbered rooms to pick from go with the property's list — the
+              // front desk hands them a room either way. With nobody arriving
+              // at all, one plain header says so.
+              ..._arrivalSections(context, d),
 
               if (d.roomsToAssignCount > 0) ...[
                 const SizedBox(height: 24),
                 _SectionHeader(
                   title: 'ລໍຖ້າໂຮງແຮມເລືອກຫ້ອງ',
                   count: d.roomsToAssignCount,
-                  trailing: [
-                    if (d.propertyChoosesCount > 0)
-                      _CountChip(
-                        icon: Icons.apartment_outlined,
-                        label: 'ໂຮງແຮມເລືອກ',
-                        count: d.propertyChoosesCount,
-                      ),
-                  ],
                 ),
                 _PlainCard(
                   child: Column(
@@ -210,7 +171,7 @@ class DashboardScreen extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => context.go('/calendar'),
+                      onPressed: () => context.go('/calendar/pricing'),
                       icon: const Icon(Icons.price_change_outlined, size: 18),
                       label: const Text('ຕັ້ງລາຄາ'),
                     ),
@@ -355,23 +316,81 @@ class _Swoosh extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+List<Widget> _arrivalSections(BuildContext context, PartnerDashboard d) {
+  // Newest booking on top: booking ids only grow, and the API sends them
+  // oldest first.
+  final arrivals = [...d.arrivals]..sort(
+      (a, b) => (BigInt.tryParse('${b['id']}') ?? BigInt.zero)
+          .compareTo(BigInt.tryParse('${a['id']}') ?? BigInt.zero),
+    );
+  final guestChose = arrivals.where((a) => a['roomChoice'] == 'guest').toList();
+  final propertyChooses = arrivals.where((a) => a['roomChoice'] != 'guest').toList();
+
+  Widget list(List<Map<String, dynamic>> arrivals) => _PlainCard(
+        child: Column(
+          children: [
+            for (var i = 0; i < arrivals.length; i++) ...[
+              if (i > 0) const Divider(height: 1, color: C.divider),
+              _ArrivalRow(arrival: arrivals[i]),
+            ],
+          ],
+        ),
+      );
+
+  void seeAll() => context.go('/bookings');
+
+  if (d.arrivals.isEmpty) {
+    return [
+      const SizedBox(height: 24),
+      _SectionHeader(title: 'ແຂກເຂົ້າພັກມື້ນີ້', actionLabel: 'ທັງໝົດ', onAction: seeAll),
+      const _PlainCard(child: _EmptyLine('ບໍ່ມີແຂກເຂົ້າພັກມື້ນີ້')),
+    ];
+  }
+
+  return [
+    if (propertyChooses.isNotEmpty) ...[
+      const SizedBox(height: 24),
+      _SectionHeader(
+        title: 'ແຂກເຂົ້າພັກມື້ນີ້',
+        note: 'ທີ່ພັກເລືອກໃຫ້',
+        count: propertyChooses.length,
+        actionLabel: 'ທັງໝົດ',
+        onAction: seeAll,
+      ),
+      list(propertyChooses),
+    ],
+    if (guestChose.isNotEmpty) ...[
+      const SizedBox(height: 24),
+      _SectionHeader(
+        title: 'ແຂກເຂົ້າພັກມື້ນີ້',
+        note: 'ແຂກເລືອກຫ້ອງເອງ',
+        count: guestChose.length,
+        // "See all" belongs to whichever list comes first.
+        actionLabel: propertyChooses.isEmpty ? 'ທັງໝົດ' : null,
+        onAction: seeAll,
+      ),
+      list(guestChose),
+    ],
+  ];
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
+    this.note,
     this.count,
     this.actionLabel,
     this.onAction,
-    this.trailing = const [],
   });
 
   final String title;
+
+  /// A quieter qualifier after the title, e.g. who picks the room. It gives
+  /// way (ellipsis) before the count or the action link would.
+  final String? note;
   final int? count;
   final String? actionLabel;
   final VoidCallback? onAction;
-
-  /// Small chips on the title's own line; they shrink (labels ellipsize)
-  /// before the title or the action link ever would.
-  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -379,43 +398,55 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: C.text),
-          ),
-          if (count != null) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-              decoration: BoxDecoration(
-                color: C.accent,
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                '$count',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-          // The chips get all the room between the title and the action link,
-          // and shrink only when that runs out (a Spacer beside them would
-          // take half of it and cut the labels for nothing).
+          // Title and count take every pixel left of the action link; only
+          // the title's text ever shrinks.
           Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final chip in trailing) ...[
-                    const SizedBox(width: 8),
-                    Flexible(child: chip),
-                  ],
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(
+                      text: title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: C.text,
+                      ),
+                      children: [
+                        if (note != null)
+                          TextSpan(
+                            text: ' ($note)',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: C.muted,
+                            ),
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (count != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: C.accent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
           if (actionLabel != null)
@@ -515,48 +546,6 @@ class _ActionRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CountChip extends StatelessWidget {
-  const _CountChip({required this.icon, required this.label, required this.count});
-
-  final IconData icon;
-  final String label;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    // Sized to share a section title's line: small, and the label gives way
-    // (ellipsis) before the count does.
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 3, 10, 3),
-      decoration: BoxDecoration(
-        color: C.surface,
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: C.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: C.soft),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11.5, color: C.soft),
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            '$count',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.text),
-          ),
-        ],
       ),
     );
   }

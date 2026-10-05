@@ -154,7 +154,7 @@ const laoWeekdaysShort = [
 ];
 
 /// Every calendar day between two `YYYY-MM-DD` strings, inclusive, in either
-/// order. Used by the pricing calendar's long-press-then-tap range selection
+/// order. Used by the pricing calendar's tap-first-then-last range selection
 /// and by the reports date-range sheet's day-count caption.
 List<String> isosBetween(String a, String b) {
   final start = DateTime.parse('${a}T00:00:00.000Z');

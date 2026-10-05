@@ -340,34 +340,6 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
 
 // ── calendar ────────────────────────────────────────────────────────────────
 
-/// Which room type the calendar screen is showing.
-final selectedRoomTypeProvider = NotifierProvider<SelectedRoomType, String?>(
-  SelectedRoomType.new,
-);
-
-class SelectedRoomType extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void set(String? roomTypeId) => state = roomTypeId;
-}
-
-/// The month the calendar is scrolled to, as UTC midnight on the 1st.
-final calendarMonthProvider = NotifierProvider<CalendarMonth, DateTime>(
-  CalendarMonth.new,
-);
-
-class CalendarMonth extends Notifier<DateTime> {
-  @override
-  DateTime build() {
-    final t = todayUtc();
-    return DateTime.utc(t.year, t.month, 1);
-  }
-
-  void shift(int months) =>
-      state = DateTime.utc(state.year, state.month + months, 1);
-}
-
 typedef CalendarKey = ({String roomTypeId, DateTime month});
 
 final roomCalendarProvider = FutureProvider.autoDispose
@@ -661,7 +633,41 @@ class PartnerActions {
     }
 
     ref.invalidate(roomCalendarProvider);
+    // The pricing list counts special nights per room type.
+    if (price != null) ref.invalidate(propertiesProvider);
     return nights;
+  }
+
+  /// Puts nights back on the room type's base rate. `to` is exclusive.
+  Future<int> clearPrices({
+    required String roomTypeId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final data = await _api.delete<dynamic>(
+      '/partner/room-types/$roomTypeId/prices',
+      query: {'from': apiDay(from), 'to': apiDay(to)},
+    );
+    ref.invalidate(roomCalendarProvider);
+    ref.invalidate(propertiesProvider);
+    return intOf(Map<String, dynamic>.from(data as Map)['nights']);
+  }
+
+  /// Changes only the base rate. The update DTO wants the room type's other
+  /// required fields too, so they go back exactly as they are.
+  Future<void> setBasePrice(RoomType roomType, int price) async {
+    await saveRoomType(
+      roomTypeId: roomType.id,
+      body: {
+        'name': roomType.name,
+        'bedType': roomType.bedType,
+        'maxOccupancy': roomType.maxOccupancy,
+        'totalRooms': roomType.totalRooms,
+        'basePrice': price,
+      },
+    );
+    // Every night without a special price follows the base rate.
+    ref.invalidate(roomCalendarProvider);
   }
 
   /// Changes how many rooms of this type exist on those nights.

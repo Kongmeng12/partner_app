@@ -75,7 +75,8 @@ class ApiClient {
   Future<T> patch<T>(String path, {Object? body}) =>
       _send<T>('PATCH', path, body: body);
 
-  Future<T> delete<T>(String path) => _send<T>('DELETE', path);
+  Future<T> delete<T>(String path, {Map<String, dynamic>? query}) =>
+      _send<T>('DELETE', path, query: query);
 
   /// Multipart upload for property and room photos. The API expects the file
   /// under the field name `file`.

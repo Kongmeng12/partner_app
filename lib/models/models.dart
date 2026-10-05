@@ -226,6 +226,7 @@ class RoomType {
     this.photos = const [],
     this.allowRoomSelection = false,
     this.rooms = const [],
+    this.specialPriceNights = 0,
   });
 
   final String id;
@@ -252,6 +253,10 @@ class RoomType {
   /// This type's individually-numbered physical rooms, if any.
   final List<RoomUnit> rooms;
 
+  /// Nights from today on that sell at their own price instead of
+  /// [basePrice]. Only the property list sends it; elsewhere it reads 0.
+  final int specialPriceNights;
+
   String get label => '$name × $totalRooms';
 
   factory RoomType.fromJson(Map<String, dynamic> j) => RoomType(
@@ -271,6 +276,7 @@ class RoomType {
     photos: _photos(j['images']),
     allowRoomSelection: _bool(j['allowRoomSelection']),
     rooms: roomUnitsOf(j['rooms']),
+    specialPriceNights: _int(j['specialPriceNights']),
   );
 }
 
@@ -727,10 +733,14 @@ class CalendarDay {
     required this.booked,
     required this.available,
     required this.onSale,
+    this.special = false,
   });
 
   final String date;
   final int price;
+
+  /// Priced on its own rather than at the room type's base rate.
+  final bool special;
   final int total;
   final int held;
   final int booked;
@@ -750,6 +760,7 @@ class CalendarDay {
     booked: _int(j['booked']),
     available: _int(j['available']),
     onSale: _bool(j['onSale']),
+    special: _bool(j['special']),
   );
 }
 

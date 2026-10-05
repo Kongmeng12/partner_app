@@ -159,6 +159,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'pricing',
                     builder: (_, __) => const PricingScreen(),
+                    routes: [
+                      GoRoute(
+                        path: ':roomTypeId',
+                        builder:
+                            (_, s) => RoomPricingScreen(
+                              roomTypeId: s.pathParameters['roomTypeId']!,
+                            ),
+                      ),
+                    ],
                   ),
                   GoRoute(
                     path: 'day/:date',
