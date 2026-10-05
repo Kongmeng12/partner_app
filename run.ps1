@@ -1,6 +1,6 @@
 # Runs the app - a thin wrapper kept around only because it's shorter to
 # type than `flutter run`, and because plain `flutter run` is wrong for a
-# real device: lib/core/network/api_client.dart defaults Android to
+# real device: a debug build of lib/core/config.dart defaults Android to
 # `10.0.2.2`, the emulator-only loopback, which a physical phone can never
 # reach and just times out against. Every run here goes through the public
 # API instead (the same origin the live site uses), so it works the same

@@ -4,15 +4,23 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   const AppConfig._();
 
-  /// Override for a real device or a deployed backend:
-  /// `flutter run --dart-define=API_BASE_URL=https://api.laostay.la/api`
+  /// Override for a real device or another backend:
+  /// `flutter run --dart-define=API_BASE_URL=https://phaphak.com/api`
   static const _override = String.fromEnvironment('API_BASE_URL');
+  static const _productionUrl = 'https://phaphak.com/api';
 
-  /// The Android emulator reaches the host machine at 10.0.2.2 — `localhost`
-  /// there means the emulator itself, so the request simply fails to connect.
-  /// Web and desktop run on the host, where localhost is correct.
+  /// A release build with no override gets the real API. Without that, a
+  /// `flutter build apk --release` that forgot the dart-define installed fine
+  /// and then failed every request on a real phone, which has no dev machine
+  /// at 10.0.2.2 to reach.
+  ///
+  /// Debug and profile builds fall back to the dev server. The Android
+  /// emulator reaches the host machine at 10.0.2.2, because `localhost` there
+  /// means the emulator itself. Web and desktop run on the host, where
+  /// localhost is correct.
   static String get apiBaseUrl {
     if (_override.isNotEmpty) return _override;
+    if (kReleaseMode) return _productionUrl;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:3100/api';
     }
