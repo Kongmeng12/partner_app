@@ -144,7 +144,11 @@ class Partner {
     this.walkinCommissionRate,
     this.propertyCount = 0,
     this.bankAccounts = const [],
+    this.documentTypes = const {},
   });
+
+  /// The documents an application must carry before it can be reviewed.
+  static const requiredDocuments = ['id_card', 'business_license'];
 
   final String id;
   final String businessName;
@@ -163,6 +167,14 @@ class Partner {
   final double? walkinCommissionRate;
   final int propertyCount;
   final List<BankAccount> bankAccounts;
+
+  /// `document_type` of every verification document on file.
+  final Set<String> documentTypes;
+
+  List<String> get missingDocuments => [
+    for (final t in requiredDocuments)
+      if (!documentTypes.contains(t)) t,
+  ];
 
   bool get isVerified => status == 'verified';
   bool get isPending => status == 'pending';
@@ -192,6 +204,9 @@ class Partner {
     propertyCount: _int(j['propertyCount']),
     bankAccounts:
         _mapList(j['bankAccounts']).map(BankAccount.fromJson).toList(),
+    documentTypes: {
+      for (final d in _mapList(j['documents'])) _str(d['type']),
+    },
   );
 }
 

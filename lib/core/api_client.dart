@@ -78,10 +78,13 @@ class ApiClient {
   Future<T> delete<T>(String path, {Map<String, dynamic>? query}) =>
       _send<T>('DELETE', path, query: query);
 
-  /// Multipart upload for property and room photos. The API expects the file
-  /// under the field name `file`.
-  Future<T> upload<T>(String path, {required MultipartFile file}) =>
-      _send<T>('POST', path, body: FormData.fromMap({'file': file}));
+  /// Multipart upload for photos and documents. The API expects the file under
+  /// the field name `file`; [fields] go alongside it as text parts.
+  Future<T> upload<T>(
+    String path, {
+    required MultipartFile file,
+    Map<String, String> fields = const {},
+  }) => _send<T>('POST', path, body: FormData.fromMap({...fields, 'file': file}));
 
   Future<T> _send<T>(
     String method,

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart' show MultipartFile;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/api_client.dart';
@@ -102,17 +103,52 @@ class AuthNotifier extends Notifier<AuthState> {
 
   /// Registration creates a `pending` application, so success lands on the
   /// "under review" screen rather than the dashboard.
-  Future<bool> register(Map<String, dynamic> body) async {
+  ///
+  /// [documents] (keyed by `document_type`) are uploaded here, between saving
+  /// the session and moving the auth stage, rather than by the form: the stage
+  /// change redirects to /pending and disposes the form, and anything it still
+  /// had in flight would die with it.
+  Future<bool> register(
+    Map<String, dynamic> body, {
+    Map<String, MultipartFile> documents = const {},
+  }) async {
     try {
       await _saveSession(await _api.partnerRegister(body));
-      _invalidateAccountData();
-      _applyPartner(await _loadPartner());
-      return true;
     } on ApiException catch (e) {
       state = AuthState(stage: AuthStage.signedOut, error: e.message);
       return false;
     }
+
+    // The account exists now. A document that fails to upload is asked for
+    // again on the "under review" screen, not a reason to lose the application.
+    for (final doc in documents.entries) {
+      try {
+        await _uploadDocument(doc.key, doc.value);
+      } on ApiException {
+        // Shown as missing on /pending.
+      }
+    }
+
+    _invalidateAccountData();
+    try {
+      _applyPartner(await _loadPartner());
+    } on ApiException catch (e) {
+      // Signed up but /me failed: still a session, so land on the pending
+      // screen, which can re-read the profile.
+      state = AuthState(stage: AuthStage.pendingApproval, error: e.message);
+    }
+    return true;
   }
+
+  /// Uploads (or replaces) one verification document, then re-reads the
+  /// profile so the "under review" screen sees it on file.
+  Future<void> uploadDocument(String type, MultipartFile file) async {
+    await _uploadDocument(type, file);
+    await refreshPartner();
+  }
+
+  Future<void> _uploadDocument(String type, MultipartFile file) =>
+      _api.upload<dynamic>('/partner/documents', file: file, fields: {'type': type});
 
   Future<void> signOut() async {
     await _api.logout();

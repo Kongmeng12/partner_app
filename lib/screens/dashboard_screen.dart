@@ -78,6 +78,17 @@ class DashboardScreen extends ConsumerWidget {
             children: [
               _TodayHero(dashboard: d),
 
+              // Payouts can only be sent to a bank account, and sign-up no
+              // longer asks for one — so ask here until there is one.
+              if (partner != null && partner.bankAccounts.isEmpty) ...[
+                const SizedBox(height: 12),
+                _ActionRow(
+                  icon: Icons.account_balance_outlined,
+                  text: 'ໃສ່ບັນຊີທະນາຄານ ເພື່ອຮັບເງິນຮອບທຳອິດ',
+                  onTap: () => context.go('/more/profile'),
+                ),
+              ],
+
               if (d.pendingBookings > 0) ...[
                 const SizedBox(height: 12),
                 _ActionRow(

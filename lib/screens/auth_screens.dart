@@ -1,9 +1,14 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart' show MultipartFile;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, TextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 
 import '../providers/auth.dart';
@@ -342,7 +347,11 @@ class _BottomCurve extends CustomClipper<Path> {
 }
 
 /// The application form. Creates the partner **and** their first property in
-/// one call, which is what the admin Approvals screen expects to review.
+/// one call, which is what the admin Approvals screen expects to review, then
+/// attaches the two verification documents.
+///
+/// Only what the review needs is asked here. Photos, amenities, rules, rooms,
+/// prices and the bank account are filled in from the app afterwards.
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
@@ -362,13 +371,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     'ownerName',
     'phone',
     'businessName',
+    'taxId',
     'propertyName',
     'province',
-    'location',
-    'bankName',
-    'bankAccount',
+    'address',
+    'mapsUrl',
+    'id_card',
+    'business_license',
   ];
-  static const _nonText = {'province', 'location'};
+  static const _nonText = {'province', 'id_card', 'business_license'};
 
   final _fields = {
     for (final key in _order)
@@ -387,14 +398,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   bool _triedSubmit = false;
   String _propertyType = 'guesthouse';
 
+  /// `business_type`: individual · company.
+  String _businessType = 'individual';
+
+  /// Photos of the verification documents, keyed by `document_type`. Held as
+  /// bytes so the same code previews and uploads them on web and mobile.
+  final _docs = <String, ({Uint8List bytes, String name})>{};
+
   /// The API wants ids, not names. A typed province cannot be matched to a row,
   /// which is what used to make every application fail validation.
   String _provinceId = '';
   String _districtId = '';
 
-  /// Where the property is, pinned on the map. Required: guests find a stay
-  /// by its pin, and an address typed from memory is the usual reason a
-  /// property shows up in the wrong place.
+  /// Where the property is, pinned on the map. Optional, as is the Google Maps
+  /// link that can stand in for it — but one of the two is what lets the
+  /// admin check the address, and guests find a stay by its pin.
   LatLng? _location;
   bool _showPassword = false;
   bool _busy = false;
@@ -404,12 +422,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   /// registration DTO. `hotel` exists since migration 0018; `apartment` still
   /// does not.
   static const _types = {
-    'homestay': 'ໂຮມສະເຕ',
-    'guesthouse': 'ເຮືອນພັກ',
     'hotel': 'ໂຮງແຮມ',
+    'guesthouse': 'ເຮືອນພັກ (Guesthouse)',
+    'homestay': 'ໂຮມສະເຕ (Homestay)',
+    'villa': 'ວິນລາ',
     'resort': 'ຣີສອດ',
-    'villa': 'ວິນລ່າ',
   };
+
+  static const _businessTypes = {'individual': 'ບຸກຄົນ', 'company': 'ບໍລິສັດ'};
 
   @override
   void dispose() {
@@ -449,43 +469,45 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
     setState(() => _busy = true);
 
+    final taxId = _fields['taxId']!.text.trim();
+    final mapsUrl = _fields['mapsUrl']!.text.trim();
+    // A full Google Maps link carries the coordinates; use them when no pin
+    // was dropped. A short maps.app.goo.gl link does not, and is kept for the
+    // admin to open instead.
+    final pin = _location ?? _coordsFromMapsUrl(mapsUrl);
+
     // Exactly the keys RegisterPartnerDto declares. The API runs with
-    // `forbidNonWhitelisted`, so one extra key rejects the whole application —
-    // the bank details go in their own call once the account exists.
+    // `forbidNonWhitelisted`, so one extra key rejects the whole application.
     final body = <String, dynamic>{
       'email': _fields['email']!.text.trim(),
       'password': _fields['password']!.text,
       'ownerName': _fields['ownerName']!.text.trim(),
       'phone': _fields['phone']!.text.trim(),
       'businessName': _fields['businessName']!.text.trim(),
+      'businessType': _businessType,
+      if (taxId.isNotEmpty) 'taxId': taxId,
       'propertyName': _fields['propertyName']!.text.trim(),
       'propertyType': _propertyType,
       'provinceId': int.parse(_provinceId),
       if (_districtId.isNotEmpty) 'districtId': int.parse(_districtId),
-      'address': _addressText(),
-      'lat': _location!.latitude,
-      'lng': _location!.longitude,
+      'address': _fields['address']!.text.trim(),
+      if (pin != null) 'lat': pin.latitude,
+      if (pin != null) 'lng': pin.longitude,
+      if (mapsUrl.isNotEmpty) 'mapsUrl': mapsUrl,
       // Required by the API, and required to be true. The server records which
       // version of each document was live when this was ticked.
       'acceptedTerms': _acceptedTerms,
     };
 
-    final ok = await ref.read(authProvider.notifier).register(body);
-
-    // Best effort, and deliberately after the account exists: a bank account
-    // that fails to save is something the partner can add from their profile,
-    // not a reason to lose the application they just filled in.
-    if (ok && _fields['bankName']!.text.trim().isNotEmpty) {
-      try {
-        await ref.read(actionsProvider).addBankAccount({
-          'bankName': _fields['bankName']!.text.trim(),
-          'accountName': _fields['ownerName']!.text.trim(),
-          'accountNumber': _fields['bankAccount']!.text.trim(),
-        });
-      } catch (_) {
-        // Added later from the profile screen.
-      }
-    }
+    final ok = await ref
+        .read(authProvider.notifier)
+        .register(
+          body,
+          documents: {
+            for (final d in _docs.entries)
+              d.key: MultipartFile.fromBytes(d.value.bytes, filename: d.value.name),
+          },
+        );
 
     if (!mounted) return;
     setState(() => _busy = false);
@@ -518,7 +540,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     child: RequiredLegend(),
                   ),
                   SectionCard(
-                    title: 'ບັນຊີຂອງທ່ານ',
+                    title: '1. ບັນຊີ',
                     child: Column(
                       children: [
                         _text(
@@ -526,6 +548,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           'ອີເມວ',
                           keyboard: TextInputType.emailAddress,
                           hint: 'name@gmail.com',
+                          helper: 'ໃຊ້ເຂົ້າສູ່ລະບົບ · ຫ້າມຊ້ຳກັບບັນຊີອື່ນ',
+                          helperMuted: true,
                           validator:
                               (v) =>
                                   _need(v, 'ອີເມວ') ??
@@ -565,12 +589,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                       ? 'ລະຫັດຜ່ານບໍ່ກົງກັນ'
                                       : null),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SectionCard(
+                    title: '2. ເຈົ້າຂອງ ແລະ ທຸລະກິດ',
+                    child: Column(
+                      children: [
                         _text(
                           'ownerName',
-                          'ຊື່ເຈົ້າຂອງ',
+                          'ຊື່ ແລະ ນາມສະກຸນ ເຈົ້າຂອງ',
                           validator:
                               (v) =>
-                                  _need(v, 'ຊື່ເຈົ້າຂອງ') ??
+                                  _need(v, 'ຊື່ ແລະ ນາມສະກຸນ') ??
                                   (v!.trim().length < 2
                                       ? 'ຊື່ຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ'
                                       : null),
@@ -602,12 +634,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                       ? 'ຊື່ທຸລະກິດຕ້ອງມີຢ່າງໜ້ອຍ 2 ຕົວອັກສອນ'
                                       : null),
                         ),
+                        _businessTypePicker(),
+                        _text(
+                          'taxId',
+                          'ເລກປະຈຳຕົວຜູ້ເສຍອາກອນ (ຖ້າມີ)',
+                          required: false,
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 14),
                   SectionCard(
-                    title: 'ທີ່ພັກຂອງທ່ານ',
+                    title: '3. ທີ່ພັກ',
                     child: Column(
                       children: [
                         _text(
@@ -642,33 +680,54 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         ),
                         _provincePicker(),
                         _districtPicker(),
+                        _text(
+                          'address',
+                          'ທີ່ຢູ່ລະອຽດ',
+                          lines: 2,
+                          hint: 'ບ້ານ, ຖະໜົນ, ຈຸດສັງເກດໃກ້ຄຽງ',
+                          validator:
+                              (v) =>
+                                  _need(v, 'ທີ່ຢູ່ລະອຽດ') ??
+                                  (v!.trim().length < 4
+                                      ? 'ທີ່ຢູ່ຕ້ອງມີຢ່າງໜ້ອຍ 4 ຕົວອັກສອນ'
+                                      : null),
+                        ),
                         _locationField(),
+                        _text(
+                          'mapsUrl',
+                          'ຫຼື ວາງລິ້ງ Google Maps',
+                          required: false,
+                          keyboard: TextInputType.url,
+                          hint: 'https://maps.app.goo.gl/…',
+                          validator:
+                              (v) =>
+                                  (v ?? '').trim().isEmpty ||
+                                          _googleMapsUrl.hasMatch(v!.trim())
+                                      ? null
+                                      : 'ລິ້ງບໍ່ແມ່ນ Google Maps · ກົດ "ແບ່ງປັນ" ໃນ Google Maps ແລ້ວສຳເນົາລິ້ງ',
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 14),
                   SectionCard(
-                    title: 'ບັນຊີທະນາຄານ (ໃສ່ພາຍຫຼັງກໍໄດ້)',
+                    title: '4. ເອກະສານຢັ້ງຢືນ',
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _text('bankName', 'ຊື່ທະນາຄານ', required: false),
-                        _text(
-                          'bankAccount',
-                          'ເລກບັນຊີ',
-                          required: false,
-                          keyboard: TextInputType.number,
-                          // Optional, but a name without a number (or the
-                          // other way round) cannot be saved as an account.
-                          validator:
-                              (v) =>
-                                  _fields['bankName']!.text.trim().isNotEmpty &&
-                                          (v ?? '').trim().isEmpty
-                                      ? 'ໃສ່ເລກບັນຊີ ຫຼື ລຶບຊື່ທະນາຄານອອກ'
-                                      : null,
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(2, 0, 2, 10),
+                          child: Text(
+                            'ຖ່າຍຮູບ ຫຼື ສະແກນ ໃຫ້ເຫັນຂໍ້ຄວາມຊັດເຈນ',
+                            style: TextStyle(color: C.muted, fontSize: 12.5),
+                          ),
                         ),
+                        for (final type in _docLabels.keys) _documentField(type),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  const _AfterSignUpNote(),
                   const SizedBox(height: 14),
                   // An explicit tick. The API refuses the application without
                   // it, so the button stays disabled rather than letting the
@@ -685,8 +744,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     title: const Text.rich(
                       TextSpan(
                         text:
-                            'ຂ້າພະເຈົ້າໄດ້ອ່ານ ແລະ ຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ '
-                            'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ຂໍ້ຕົກລົງ Partner',
+                            '5. ຂ້າພະເຈົ້າຍອມຮັບເງື່ອນໄຂການໃຊ້ບໍລິການ, '
+                            'ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ ແລະ ສັນຍາ Partner',
                         children: [
                           TextSpan(
                             text: ' *',
@@ -815,44 +874,36 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
   }
 
-  /// The API still takes an address string, so it is built from the chosen
-  /// district and province. The pin is what actually locates the property.
-  String _addressText() {
-    final province =
-        ref
-            .read(provincesProvider)
-            .value
-            ?.where((p) => p.id == _provinceId)
-            .firstOrNull
-            ?.name;
-    final district =
-        _districtId.isEmpty
-            ? null
-            : ref
-                .read(districtsProvider(_provinceId))
-                .value
-                ?.where((d) => d.id == _districtId)
-                .firstOrNull
-                ?.name;
-    final text = [district, province].whereType<String>().join(', ');
-    // The DTO wants at least 4 characters. Fall back to the coordinates
-    // rather than fail an otherwise complete application.
-    return text.length >= 4
-        ? text
-        : '${_location!.latitude.toStringAsFixed(6)}, ${_location!.longitude.toStringAsFixed(6)}';
+  /// Individual or company — two choices, so both stay in view.
+  Widget _businessTypePicker() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'ປະເພດທຸລະກິດ',
+          contentPadding: EdgeInsets.fromLTRB(10, 14, 10, 10),
+        ),
+        child: SegmentedButton<String>(
+          segments: [
+            for (final e in _businessTypes.entries)
+              ButtonSegment(value: e.key, label: Text(e.value)),
+          ],
+          selected: {_businessType},
+          showSelectedIcon: false,
+          onSelectionChanged:
+              (s) => setState(() => _businessType = s.first),
+        ),
+      ),
+    );
   }
 
-  /// The pin, as a form field so a missing one fails validation like any other
-  /// required input. The preview is non-interactive: a draggable map inside a
-  /// scrolling form would steal the page's scroll.
+  /// The pin. Optional: a Google Maps link below can stand in for it. The
+  /// preview is non-interactive: a draggable map inside a scrolling form would
+  /// steal the page's scroll.
   Widget _locationField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: FormField<LatLng>(
-        key: _keys['location'],
-        validator:
-            (_) =>
-                _location == null ? 'ກະລຸນາປັກໝຸດທີ່ຕັ້ງທີ່ພັກໃນແຜນທີ່' : null,
         builder: (field) {
           Future<void> pick() async {
             final picked = await Navigator.of(context).push<LatLng>(
@@ -867,10 +918,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
           final location = _location;
           return InputDecorator(
-            decoration: InputDecoration(
-              label: fieldLabel('ທີ່ຕັ້ງໃນແຜນທີ່', required: true),
-              errorText: field.errorText,
-              contentPadding: const EdgeInsets.all(10),
+            decoration: const InputDecoration(
+              labelText: 'ປັກໝຸດທີ່ຕັ້ງໃນແຜນທີ່',
+              contentPadding: EdgeInsets.all(10),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -924,6 +974,86 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
   }
 
+  static const _docLabels = {
+    'id_card': (
+      'ບັດປະຈຳຕົວ ຫຼື ໜັງສືຜ່ານແດນ ຂອງເຈົ້າຂອງ',
+      Icons.badge_outlined,
+    ),
+    'business_license': (
+      'ໃບທະບຽນວິສາຫະກິດ ຫຼື ໃບອະນຸຍາດດຳເນີນທຸລະກິດ',
+      Icons.description_outlined,
+    ),
+  };
+
+  /// One required document: a thumbnail once attached, and a button to take
+  /// or choose the photo. A form field so a missing one fails like any other.
+  Widget _documentField(String type) {
+    final (label, icon) = _docLabels[type]!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: FormField<void>(
+        key: _keys[type],
+        validator: (_) => _docs[type] == null ? 'ກະລຸນາແນບເອກະສານນີ້' : null,
+        builder: (field) {
+          final doc = _docs[type];
+          return InputDecorator(
+            decoration: InputDecoration(
+              errorText: field.errorText,
+              contentPadding: const EdgeInsets.all(10),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(R.sm),
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child:
+                        doc == null
+                            ? ColoredBox(
+                              color: C.neutralBg,
+                              child: Icon(icon, color: C.muted),
+                            )
+                            : Image.memory(doc.bytes, fit: BoxFit.cover),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      fieldLabel(label, required: true),
+                      const SizedBox(height: 2),
+                      Text(
+                        doc == null ? 'ຍັງບໍ່ໄດ້ແນບ' : '✓ ແນບແລ້ວ',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: doc == null ? C.muted : C.successFg,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _busy ? null : () => _pickDocument(type, field),
+                  child: Text(doc == null ? 'ແນບ' : 'ປ່ຽນ'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickDocument(String type, FormFieldState<void> field) async {
+    final picked = await _pickDocumentPhoto(context);
+    if (picked == null || !mounted) return;
+    setState(() => _docs[type] = picked);
+    field.didChange(null);
+  }
+
   /// "ກະລຸນາໃສ່…" for an empty required field, or null.
   String? _need(String? v, String what) =>
       (v ?? '').trim().isEmpty ? 'ກະລຸນາໃສ່$what' : null;
@@ -942,6 +1072,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     TextInputType? keyboard,
     String? hint,
     String? helper,
+    bool helperMuted = false,
     ValueChanged<String>? onChanged,
     List<TextInputFormatter>? formatters,
     String? Function(String?)? validator,
@@ -965,7 +1096,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           label: fieldLabel(label, required: required),
           hintText: hint,
           helperText: helper,
-          helperStyle: const TextStyle(color: C.successFg),
+          helperStyle: TextStyle(color: helperMuted ? C.muted : C.successFg),
           errorMaxLines: 2,
           // The same eye as the login screen, shared by both password
           // fields so the pair can be compared at a glance.
@@ -984,6 +1115,221 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   : null,
         ),
         validator: validator ?? (v) => required ? _need(v, label) : null,
+      ),
+    );
+  }
+}
+
+/// Same hosts as GOOGLE_MAPS_URL in the backend's `auth.dto.ts`.
+final _googleMapsUrl = RegExp(
+  r'^https://(maps\.app\.goo\.gl/|goo\.gl/maps/|(www\.)?google\.[a-z.]{2,6}/maps|maps\.google\.[a-z.]{2,6}/)\S*$',
+  caseSensitive: false,
+);
+
+/// The coordinates inside a full Google Maps link — `@lat,lng`, `?q=lat,lng`
+/// or the `!3dlat!4dlng` of a place — or null. Short `maps.app.goo.gl` links
+/// carry none; resolving them would mean following a redirect from the app.
+LatLng? _coordsFromMapsUrl(String url) {
+  if (url.isEmpty) return null;
+  String text;
+  try {
+    text = Uri.decodeFull(url);
+  } catch (_) {
+    // A stray `%` in a pasted link; read it as it is.
+    text = url;
+  }
+  final m =
+      RegExp(r'!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)').firstMatch(text) ??
+      RegExp(r'@(-?\d+\.\d+),(-?\d+\.\d+)').firstMatch(text) ??
+      RegExp(r'[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)').firstMatch(text);
+  if (m == null) return null;
+  final lat = double.parse(m.group(1)!);
+  final lng = double.parse(m.group(2)!);
+  if (lat.abs() > 90 || lng.abs() > 180) return null;
+  return LatLng(lat, lng);
+}
+
+/// Takes or chooses a photo of a verification document. On the web there is
+/// no camera choice to make — the browser's file picker offers both.
+Future<({Uint8List bytes, String name})?> _pickDocumentPhoto(
+  BuildContext context,
+) async {
+  final source =
+      kIsWeb
+          ? ImageSource.gallery
+          : await showModalBottomSheet<ImageSource>(
+            context: context,
+            builder:
+                (ctx) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.photo_camera_outlined),
+                        title: const Text('ຖ່າຍຮູບ'),
+                        onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.photo_library_outlined),
+                        title: const Text('ເລືອກຈາກຄັງຮູບ'),
+                        onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                      ),
+                    ],
+                  ),
+                ),
+          );
+  if (source == null) return null;
+
+  try {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      // Big enough to read a card number; the server re-encodes anyway.
+      maxWidth: 2400,
+      maxHeight: 2400,
+      imageQuality: 88,
+    );
+    if (picked == null) return null;
+    return (bytes: await picked.readAsBytes(), name: picked.name);
+  } catch (_) {
+    if (context.mounted) {
+      showMessage(context, 'ເປີດກ້ອງ ຫຼື ຄັງຮູບບໍ່ໄດ້', error: true);
+    }
+    return null;
+  }
+}
+
+/// What is left for after approval, and the one item that holds up money.
+class _AfterSignUpNote extends StatelessWidget {
+  const _AfterSignUpNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: C.infoBg,
+        borderRadius: BorderRadius.circular(R.md),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ຕື່ມພາຍຫຼັງໃນແອັບ Partner',
+            style: TextStyle(
+              color: C.infoFg,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'ຮູບ, ຄຳອະທິບາຍ, ສິ່ງອຳນວຍຄວາມສະດວກ, ກົດລະບຽບ, ເວລາເຊັກອິນ ແລະ '
+            'ເຊັກເອົ້າ, ນະໂຍບາຍຍົກເລີກ, ປະເພດຫ້ອງ, ລາຄາ ແລະ ບັນຊີທະນາຄານ.',
+            style: TextStyle(color: C.soft, fontSize: 12.5, height: 1.5),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'ເງິນຈະໂອນໃຫ້ທ່ານໄດ້ກໍ່ຕໍ່ເມື່ອມີບັນຊີທະນາຄານແລ້ວ — '
+            'ກະລຸນາໃສ່ບັນຊີກ່ອນຮອບຈ່າຍເງິນຮອບທຳອິດ.',
+            style: TextStyle(
+              color: C.warnFg,
+              fontSize: 12.5,
+              height: 1.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// On the "under review" screen: any required document the application is
+/// still missing — an upload that failed at sign-up, or an account made by an
+/// older app build — with a button to send it now.
+class _MissingDocuments extends ConsumerStatefulWidget {
+  const _MissingDocuments({required this.missing});
+
+  final List<String> missing;
+
+  @override
+  ConsumerState<_MissingDocuments> createState() => _MissingDocumentsState();
+}
+
+class _MissingDocumentsState extends ConsumerState<_MissingDocuments> {
+  String? _uploading;
+
+  static const _labels = {
+    'id_card': 'ບັດປະຈຳຕົວ ຫຼື ໜັງສືຜ່ານແດນ',
+    'business_license': 'ໃບທະບຽນວິສາຫະກິດ ຫຼື ໃບອະນຸຍາດ',
+  };
+
+  Future<void> _upload(String type) async {
+    final picked = await _pickDocumentPhoto(context);
+    if (picked == null || !mounted) return;
+    setState(() => _uploading = type);
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .uploadDocument(
+            type,
+            MultipartFile.fromBytes(picked.bytes, filename: picked.name),
+          );
+      if (mounted) showMessage(context, 'ສົ່ງເອກະສານແລ້ວ');
+    } catch (e) {
+      if (mounted) showMessage(context, e.toString(), error: true);
+    } finally {
+      if (mounted) setState(() => _uploading = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: C.warnBg,
+        borderRadius: BorderRadius.circular(R.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'ຍັງຂາດເອກະສານ — ທີມງານຈະກວດໃບສະໝັກໄດ້ເມື່ອໄດ້ຮັບຄົບ',
+            style: TextStyle(
+              color: C.warnFg,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final type in widget.missing)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _labels[type] ?? type,
+                      style: const TextStyle(fontSize: 13, color: C.text),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _uploading != null ? null : () => _upload(type),
+                    icon:
+                        _uploading == type
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.add_a_photo_outlined, size: 16),
+                    label: const Text('ແນບ'),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1043,6 +1389,13 @@ class PendingApprovalScreen extends ConsumerWidget {
                       height: 1.6,
                     ),
                   ),
+                  if (partner != null &&
+                      partner.missingDocuments.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _MissingDocuments(missing: partner.missingDocuments),
+                  ],
+                  const SizedBox(height: 20),
+                  const _AfterSignUpNote(),
                   const SizedBox(height: 26),
                   FilledButton.icon(
                     onPressed:
