@@ -1,11 +1,11 @@
 {
-    "name": "partner_app",
-    "short_name": "partner_app",
+    "name": "Phapai Partner",
+    "short_name": "Phapai Partner",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FD4D1C",
+    "theme_color": "#FD4D1C",
+    "description": "Phapai — ແອັບສຳລັບເຈົ້າຂອງທີ່ພັກ (Partner)",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

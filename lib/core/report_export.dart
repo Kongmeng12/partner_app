@@ -20,7 +20,7 @@ import '../theme/report_specs.dart';
 import 'dates.dart';
 
 String _fileBaseName(ReportSpec spec, ReportResult report) =>
-    'phaphak_${spec.type.path}_${report.from}_${report.to}';
+    'phapai_${spec.type.path}_${report.from}_${report.to}';
 
 /// Builds the CSV text for one report: a small summary block, then the
 /// breakdown table — the two things worth pasting into a spreadsheet.
