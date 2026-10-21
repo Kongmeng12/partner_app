@@ -95,7 +95,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           Icon(Icons.lock_outline, size: 13, color: C.faint),
                           SizedBox(width: 5),
                           Text(
-                            'ເຊື່ອມຕໍ່ແບບປອດໄພ · © PhaPhak',
+                            'ເຊື່ອມຕໍ່ແບບປອດໄພ · © Phapai',
                             style: TextStyle(color: C.faint, fontSize: 11.5),
                           ),
                         ],
@@ -230,7 +230,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 }
 
-/// The orange top of the sign-in screen: the PhaPhak mark on a white ring,
+/// The orange top of the sign-in screen: the Phapai mark on a white ring,
 /// the name, and a soft curve the form card overlaps.
 class _LoginHeader extends StatelessWidget {
   const _LoginHeader({required this.topInset});
@@ -285,7 +285,7 @@ class _LoginHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   const Text(
-                    'PhaPhak Partner',
+                    'Phapai Partner',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 28,
@@ -723,7 +723,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'ໃບສະໝັກຈະຖືກກວດສອບໂດຍທີມງານ PhaPhak ກ່ອນເປີດຮັບການຈອງ',
+                    'ໃບສະໝັກຈະຖືກກວດສອບໂດຍທີມງານ Phapai ກ່ອນເປີດຮັບການຈອງ',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: C.muted, fontSize: 12.5),
                   ),
@@ -1034,7 +1034,7 @@ class PendingApprovalScreen extends ConsumerWidget {
                   const SizedBox(height: 10),
                   Text(
                     'ສະບາຍດີ ${partner?.ownerName ?? ''}\n'
-                    'ທີມງານ PhaPhak ກຳລັງກວດສອບໃບສະໝັກຂອງທ່ານ. '
+                    'ທີມງານ Phapai ກຳລັງກວດສອບໃບສະໝັກຂອງທ່ານ. '
                     'ເມື່ອຜ່ານແລ້ວ ທ່ານຈະຕັ້ງລາຄາ ແລະ ຮັບການຈອງໄດ້ທັນທີ.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(

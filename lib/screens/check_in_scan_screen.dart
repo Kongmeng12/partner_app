@@ -209,7 +209,7 @@ class _CameraProblem extends StatelessWidget {
           padding: const EdgeInsets.all(32),
           child: Text(
             denied
-                ? 'ແອັບຍັງບໍ່ໄດ້ຮັບອະນຸຍາດໃຫ້ໃຊ້ກ້ອງ\nເປີດໄດ້ທີ່ ການຕັ້ງຄ່າ › ແອັບ › PhaPhak Partner › ສິດ'
+                ? 'ແອັບຍັງບໍ່ໄດ້ຮັບອະນຸຍາດໃຫ້ໃຊ້ກ້ອງ\nເປີດໄດ້ທີ່ ການຕັ້ງຄ່າ › ແອັບ › Phapai Partner › ສິດ'
                 : 'ເປີດກ້ອງບໍ່ໄດ້ · ${error.errorCode.name}',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
